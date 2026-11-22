@@ -1,0 +1,35 @@
+[project]
+name = "cycle-overlay"
+dynamic = ["version"]
+description = "GPX-Telemetrie als transparentes Video-Overlay für Action-Cam-Aufnahmen"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26",
+    "platformdirs>=4.0",
+    "PySide6-Essentials>=6.6",
+    # Windows hat keine eingebaute IANA-Zeitzonendatenbank (für zoneinfo)
+    "tzdata>=2024.1; sys_platform == 'win32'",
+    # TLS über die System-Zertifikate (Schlüsselbund/Windows-Speicher) für Kartendownloads
+    "truststore>=0.9",
+]
+
+[project.scripts]
+cycle-overlay = "cycle_overlay.main:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/cycle_overlay/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cycle_overlay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

@@ -1,0 +1,22 @@
+# Python / uv
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# Build-Ergebnisse
+build/
+dist/
+
+# mitgeliefertes ffmpeg wird beim Bauen heruntergeladen (zu groß für Git)
+packaging/windows/ffmpeg/
+
+# lokale Arbeitsdateien
+.DS_Store
+*.csv
+test_ergebnis.txt
+vorschau.png
+*.syncdiag.npz
+*.syncdiag.txt
