@@ -48,6 +48,9 @@ class MainWindow(QMainWindow):
         self.c = c = controller or Controller(parent=self)
         self.settings = AppSettings.load()
         configure_ffmpeg(self.settings.ffmpeg_path, self.settings.ffprobe_path)
+        from .update_dialog import UpdateManager
+
+        self.updates = UpdateManager(self)
         c.model.project.units = self.settings.units
         self.resize(1500, 900)
         self.setAcceptDrops(True)
@@ -176,6 +179,7 @@ class MainWindow(QMainWindow):
         self._action(play, "1 Frame zurück", lambda: self.c.step_frames(-1), "Ctrl+Left")
 
         h = mb.addMenu("&Hilfe")
+        self._action(h, "Nach Updates suchen …", lambda: self.updates.check(manual=True))
         self._action(h, "ffmpeg prüfen …", self.check_ffmpeg)
         self._action(h, "Sync-Diagnose speichern …", self.save_sync_diagnostics)
         self._action(h, f"Über {APP_NAME}", self.about)

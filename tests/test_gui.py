@@ -921,3 +921,60 @@ def test_timeline_toolbar_fits_and_mnemonics_escaped(loaded):
     # „Kamera & Zeit“ darf nicht als Tastenkürzel verschluckt werden
     sec = w.sync.sections["time"]
     assert isinstance(sec, CollapsibleSection) and sec.header.text() == "Kamera && Zeit"
+
+
+def _fake_release(version="9.9.0"):
+    return {"tag_name": f"v{version}", "html_url": "https://example.invalid/r", "body": "- neu",
+            "assets": [{"name": f"CycleOverlay-Setup-{version}.exe", "size": 3,
+                        "browser_download_url": "https://example.invalid/s.exe"}]}
+
+
+def test_update_check_shows_dialog_and_skip(win, monkeypatch):
+    from cycle_overlay.gui import update_dialog as ud
+
+    monkeypatch.setattr(win.settings, "save", lambda *a, **k: None)
+    shown = []
+
+    def fake_exec(dlg):
+        shown.append(dlg)
+        dlg.choice = ud.UpdateDialog.SKIP
+        return 1
+
+    monkeypatch.setattr(ud.UpdateDialog, "exec", fake_exec)
+    mgr = ud.UpdateManager(win, fetch=lambda: _fake_release())
+    mgr.check(manual=True)
+    assert wait_for(lambda: shown, 10)
+    assert mgr.last_info.version == "9.9.0"
+    assert not shown[0].install_btn.isVisibleTo(shown[0])  # aus dem Quellcode gestartet: nur Release-Seite
+    assert win.settings.skipped_version == "9.9.0"
+    # automatische Prüfung zeigt eine übersprungene Version nicht erneut
+    shown.clear()
+    win.settings.check_updates, win.settings.last_update_check = True, 0
+    mgr.auto_check()
+    assert wait_for(lambda: mgr._check is None, 10)
+    QApplication.processEvents()
+    assert not shown and win.settings.last_update_check > 0
+
+
+def test_update_check_up_to_date_and_errors(win, monkeypatch):
+    from cycle_overlay import __version__
+    from cycle_overlay.core.updates import UpdateError
+    from cycle_overlay.gui import update_dialog as ud
+
+    monkeypatch.setattr(win.settings, "save", lambda *a, **k: None)
+    infos = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: infos.append(a[2]))
+    mgr = ud.UpdateManager(win, fetch=lambda: _fake_release(__version__))
+    mgr.check(manual=True)
+    assert wait_for(lambda: infos, 10) and "aktuell" in infos[0]
+
+    def boom():
+        raise UpdateError("Keine Verbindung zu GitHub")
+
+    mgr2 = ud.UpdateManager(win, fetch=boom)
+    mgr2.check(manual=True)
+    assert wait_for(lambda: win.errors, 10) and "Keine Verbindung" in win.errors[-1][1]
+    # ausgeschaltet: keine automatische Prüfung
+    win.settings.check_updates = False
+    mgr2.auto_check()
+    assert mgr2._check is None

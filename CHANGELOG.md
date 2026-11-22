@@ -4,6 +4,21 @@ Versionen nach dem Schema **MAJOR.MINOR.PATCH**: PATCH = Fehlerbehebungen, MINOR
 Funktionen, MAJOR = inkompatible Änderungen (z. B. am Projektformat). Die laufende Version
 steht im Fenstertitel, unter „Hilfe → Über“ und bei `cycle-overlay --version`.
 
+## 1.8.0
+
+### Neu
+- **Updates aus dem Internet**: Die App prüft beim Start (höchstens einmal am Tag) auf
+  https://github.com/ncakeljic/CycleOverlay/releases, ob es eine neuere Version gibt, und zeigt
+  dann die Änderungen. Unter Windows lädt „Herunterladen und installieren“ den neuen Installer,
+  beendet CycleOverlay (vorher wird nach dem Speichern gefragt), aktualisiert und startet die App
+  wieder. Projekte und Einstellungen bleiben erhalten.
+  - Von Hand: Hilfe → „Nach Updates suchen …“.
+  - „Diese Version überspringen“ und „Beim Start automatisch nach Updates suchen“ im Hinweisfenster.
+  - Aus dem Quellcode gestartet (macOS mit uv): nur Hinweis und Link, Aktualisieren per `git pull`.
+- **Automatische Releases**: Ein Git-Tag `vX.Y.Z` startet auf GitHub den Bau des Windows-Installers
+  und veröffentlicht ein Release mit dem passenden CHANGELOG-Abschnitt (`.github/workflows/release.yml`).
+- `.gitignore` für das Repository (ohne virtuelle Umgebung, Build-Ergebnisse und mitgeliefertes ffmpeg).
+
 ## 1.7.0
 
 ### Neu

@@ -9,6 +9,7 @@ __pycache__/
 # Build-Ergebnisse
 build/
 dist/
+packaging/windows/Output/
 
 # mitgeliefertes ffmpeg wird beim Bauen heruntergeladen (zu groß für Git)
 packaging/windows/ffmpeg/

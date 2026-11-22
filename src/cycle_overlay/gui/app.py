@@ -72,4 +72,7 @@ def run_gui(paths: list[str] | None = None) -> int:
     win.check_ffmpeg(silent_if_ok=True)
     if paths:
         win.open_paths(paths)
+    from PySide6.QtCore import QTimer
+
+    QTimer.singleShot(4000, win.updates.auto_check)  # einmal täglich, still bei Fehlern
     return app.exec()

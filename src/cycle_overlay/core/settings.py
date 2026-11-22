@@ -25,6 +25,12 @@ class AppSettings:
     units: str = "metric"  # "metric" | "imperial"
     #: IANA-Zeitzone für Kamerazeiten, None = Zeitzone des Rechners
     default_timezone: str | None = None
+    #: beim Start (höchstens einmal täglich) nach Updates suchen
+    check_updates: bool = True
+    #: Zeitpunkt der letzten automatischen Prüfung (Unix-Zeit)
+    last_update_check: float = 0.0
+    #: Version, die der Nutzer mit „Diese Version überspringen“ ausgeblendet hat
+    skipped_version: str | None = None
 
     @classmethod
     def load(cls, path: Path | None = None) -> "AppSettings":

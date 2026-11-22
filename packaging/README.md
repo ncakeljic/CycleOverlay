@@ -41,3 +41,22 @@ Optionen: `-SkipTests` (schneller), `-SkipFfmpeg` (ffmpeg nicht mitliefern, die 
   bei Weitergabe die LGPL-Bedingungen beachten.
 - Die App prüft sich nach der Installation jederzeit mit: `"C:\Program Files\CycleOverlay\CycleOverlay.exe" selftest`
   (Ergebnis in `%TEMP%\cycleoverlay_selftest.txt`).
+
+
+## Neue Version veröffentlichen (GitHub)
+
+1. `__version__` in `src/cycle_overlay/__init__.py` erhöhen und oben in `CHANGELOG.md` einen
+   Abschnitt `## X.Y.Z` schreiben.
+2. Committen und pushen, dann den Tag setzen:
+
+   ```bash
+   git tag vX.Y.Z
+   git push --tags
+   ```
+
+3. GitHub Actions (`.github/workflows/release.yml`) prüft, ob Tag und Version zusammenpassen, baut
+   den Windows-Installer und veröffentlicht das Release mit dem CHANGELOG-Abschnitt als Text.
+4. Installierte Apps finden das Update beim nächsten Start (bzw. über Hilfe → „Nach Updates suchen …“).
+
+Das Repository muss **öffentlich** sein, damit die Apps die Releases ohne Anmeldung abrufen können.
+Der Installer ist nicht signiert; Windows (SmartScreen/Smart App Control) kann deshalb warnen.

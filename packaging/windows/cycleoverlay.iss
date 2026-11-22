@@ -58,3 +58,5 @@ Root: HKA; Subkey: "Software\Classes\CycleOverlay.Project\shell\open\command"; V
 
 [Run]
 Filename: "{app}\CycleOverlay.exe"; Description: "{cm:LaunchProgram,CycleOverlay}"; Flags: nowait postinstall skipifsilent
+; Update aus der App (/SILENT): danach automatisch wieder starten
+Filename: "{app}\CycleOverlay.exe"; Flags: nowait runasoriginaluser; Check: WizardSilent
