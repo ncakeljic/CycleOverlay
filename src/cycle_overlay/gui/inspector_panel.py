@@ -7,12 +7,16 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFontComboBox,
+    QFrame,
+    QGridLayout,
+    QMessageBox,
+    QPushButton,
     QFormLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QScrollArea,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -24,11 +28,13 @@ from ..rendering.layout import (
     GRADE_SCHEMES,
     MAP_CHANNEL,
     POSITION_TYPES,
+    PROGRESS_CHANNELS,
     WidgetConfig,
     Zone,
     grade_scheme_of,
     parse_color,
 )
+from ..rendering.typography import BUNDLED_FAMILIES, PRESET_KEYS, TYPE_PRESETS, apply_preset, preset_of
 from ..rendering.values import CLOCK_CHANNEL
 from .controller import Controller
 from .form_kit import AnchorGrid, CollapsibleSection, ColorButton, SegmentedControl, SliderSpin, hint_label
@@ -157,7 +163,7 @@ class InspectorPanel(QScrollArea):
         if f.target == "climb":
             return lambda v: self._set_climb(f.key, v, rebuild=f.rebuild)
         if f.target == "style":
-            return lambda v: self._set_style(f.key, v)
+            return lambda v: self._set_style(f.key, v, rebuild=f.rebuild)
         return lambda v: self._set(f.key, v, rebuild=f.rebuild)
 
     def _add_field(self, form: QFormLayout, cfg: WidgetConfig, f: Field) -> None:
@@ -232,10 +238,7 @@ class InspectorPanel(QScrollArea):
             ed.editingFinished.connect(lambda e=ed: set_value(e.text() or None))
             w = ed
         elif f.kind == "font":
-            fc = QFontComboBox()
-            fc.setCurrentText(value)
-            fc.currentTextChanged.connect(set_value)
-            w = fc
+            w = self._font_combo(value, set_value)
         elif f.kind == "anchor":
             grid = AnchorGrid(cfg.anchor, ANCHOR_TITLES)
             grid.changed.connect(self._change_anchor)
@@ -271,13 +274,29 @@ class InspectorPanel(QScrollArea):
         elif key in ("shadow", "outline", "badge"):
             cb = QCheckBox(f.label)
             cb.setChecked(getattr(cfg.style, key))
-            cb.toggled.connect(lambda v, k=key: self._set_style(k, v))
+            cb.toggled.connect(lambda v, k=key: self._set_style(k, v, rebuild=True))
             ckey = f.keys[1]
             row = QHBoxLayout()
             row.addWidget(cb)
             row.addWidget(ColorButton(getattr(cfg.style, ckey), lambda v, k=ckey: self._set_style(k, v)))
             row.addStretch(1)
             form.addRow("", row)
+        elif key == "type_preset":
+            form.addRow(self._type_gallery(cfg))
+        elif key == "apply_type_all":
+            btn = QPushButton("Schrift auf alle Widgets übertragen")
+            btn.setToolTip("Schriftart, Stärken, Breite, Abstand, Kursiv und Größen dieses Widgets\n"
+                           "für alle anderen Widgets übernehmen (Farben bleiben).")
+            btn.clicked.connect(lambda: self._apply_all(PRESET_KEYS + ("label_uppercase",), "die Schrift"))
+            form.addRow(btn)
+        elif key == "apply_style_all":
+            btn = QPushButton("Farben und Effekte auf alle übertragen")
+            btn.setToolTip("Farben, Schatten, Kontur und Kachel dieses Widgets für alle anderen übernehmen.")
+            keys = ("text_color", "label_color", "accent_color", "track_color", "shadow", "shadow_color",
+                    "shadow_distance", "outline", "outline_color", "outline_width", "badge", "badge_color",
+                    "badge_radius")
+            btn.clicked.connect(lambda: self._apply_all(keys, "Farben und Effekte"))
+            form.addRow(btn)
         elif key == "map_hint":
             if cfg.minimap.background == "osm" and self.c.model.map_data is None:
                 form.addRow("", hint_label("Noch keine Kartendaten – links „Kartendaten laden“."))
@@ -297,6 +316,88 @@ class InspectorPanel(QScrollArea):
             form.addRow("", QLabel("In dieser Fahrt: " + ", ".join(parts)))
         else:  # pragma: no cover
             raise ValueError(f"Unbekanntes Sonderfeld: {key}")
+
+    # ------------------------------------------------------------------ Schrift
+
+    def _font_combo(self, value: str, set_value) -> QComboBox:
+        """Mitgelieferte Schriften oben (in ihrer eigenen Schrift dargestellt), darunter alle System-
+        schriften. Mitgelieferte sehen auf jedem Rechner gleich aus – System-Schriften nicht unbedingt."""
+        from PySide6.QtGui import QFont, QFontDatabase
+
+        box = QComboBox()
+        box.setMaxVisibleItems(16)
+        for fam, hint in BUNDLED_FAMILIES.items():
+            box.addItem(fam, fam)
+            i = box.count() - 1
+            f = QFont(fam)
+            f.setPointSizeF(box.font().pointSizeF() * 1.15)
+            box.setItemData(i, f, Qt.ItemDataRole.FontRole)
+            box.setItemData(i, f"{hint} · mitgeliefert, überall gleich", Qt.ItemDataRole.ToolTipRole)
+        box.insertSeparator(box.count())
+        for fam in QFontDatabase.families():
+            if fam not in BUNDLED_FAMILIES and not fam.startswith("."):
+                box.addItem(fam, fam)
+        idx = box.findData(value)
+        if idx < 0:
+            box.addItem(value, value)
+            idx = box.count() - 1
+        box.setCurrentIndex(idx)
+        box.currentIndexChanged.connect(lambda i: set_value(box.itemData(i)) if box.itemData(i) else None)
+        return box
+
+    def _type_gallery(self, cfg: WidgetConfig) -> QWidget:
+        """Schriftstile als Kacheln: jede zeigt „43“ in ihrer Schrift – ein Klick setzt den Stil."""
+        from PySide6.QtGui import QFont
+
+        from ..rendering.typography import WEIGHTS
+
+        current = preset_of(cfg.style)
+        frame = QFrame()
+        grid = QGridLayout(frame)
+        grid.setContentsMargins(0, 0, 0, 4)
+        grid.setSpacing(4)
+        self.type_buttons: dict[str, QToolButton] = {}
+        for i, (key, pr) in enumerate(TYPE_PRESETS.items()):
+            b = QToolButton()
+            b.setCheckable(True)
+            b.setChecked(key == current)
+            b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+            b.setText(f"43 km/h\n{pr.title}")
+            f = QFont(pr.font_family)
+            f.setPixelSize(15)
+            f.setWeight(QFont.Weight(WEIGHTS[pr.value_weight][1]))
+            f.setItalic(pr.italic)
+            if abs(pr.font_width - 1.0) > 1e-6:
+                f.setStretch(int(pr.font_width * 100))
+            b.setFont(f)
+            b.setToolTip(f"{pr.title}: {pr.hint}\n({pr.font_family})")
+            b.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            b.setMinimumHeight(46)
+            b.clicked.connect(lambda _=False, k=key: self._apply_type_preset(k))
+            grid.addWidget(b, i // 2, i % 2)
+            self.type_buttons[key] = b
+        return frame
+
+    def _apply_type_preset(self, key: str) -> None:
+        cfg = self._cfg
+        if self._building or cfg is None:
+            return
+        apply_preset(cfg.style, key)
+        self.c.layout_edited(self)
+        self.schedule_rebuild()
+
+    def _apply_all(self, keys, what: str) -> None:
+        cfg = self._cfg
+        if cfg is None:
+            return
+        others = len(self.c.model.project.layout.widgets) - 1
+        if others <= 0:
+            self.c.message.emit("Es gibt keine weiteren Widgets.")
+            return
+        ans = QMessageBox.question(self, "Auf alle übertragen",
+                                   f"{what[0].upper() + what[1:]} dieses Widgets auf {others} weitere Widget(s) übertragen?")
+        if ans == QMessageBox.StandardButton.Yes:
+            self.c.apply_style_to_all(cfg, keys)
 
     def _range_row(self, form: QFormLayout, cfg: WidgetConfig) -> None:
         auto = QCheckBox("automatisch")
@@ -347,6 +448,24 @@ class InspectorPanel(QScrollArea):
         form.addRow("Farbzonen", zones)
         form.addRow("", zones_err)
 
+        def spread():
+            from ..rendering.templates import even_zones
+
+            lo, hi = self.c.model.frame_values([0.0]).range(cfg) if self.c.model.ready else (0.0, 100.0)
+            self._set("zones", [Zone(v, c) for v, c in even_zones(lo, hi)], rebuild=True)
+
+        fill_btn = QPushButton("5 Zonen verteilen")
+        fill_btn.setToolTip("Blau → Grün → Gelb → Orange → Rot gleichmäßig über den Bereich verteilen.\n"
+                            "Danach im Feld oben anpassen (Wert:Farbe).")
+        fill_btn.clicked.connect(spread)
+        clear_btn = QPushButton("Keine Zonen")
+        clear_btn.clicked.connect(lambda: self._set("zones", [], rebuild=True))
+        row = QHBoxLayout()
+        row.addWidget(fill_btn)
+        row.addWidget(clear_btn)
+        row.addStretch(1)
+        form.addRow("", row)
+
     # ------------------------------------------------------------------ Änderungen
 
     def _set(self, key: str, value, rebuild: bool = False) -> None:
@@ -385,6 +504,11 @@ class InspectorPanel(QScrollArea):
         cfg = self._cfg
         if self._building or cfg is None:
             return
+        if (cfg.type == "progress" and channel not in PROGRESS_CHANNELS) or cfg.type == "gainloss" \
+                or (cfg.type == "scope" and channel == CLOCK_CHANNEL):
+            if channel != MAP_CHANNEL:
+                self._set_many(rebuild=True, channel=channel, type="text")
+                return
         if channel == MAP_CHANNEL:
             wtype = cfg.type if cfg.type in POSITION_TYPES else "minimap"
             self._set_many(rebuild=True, channel=channel, type=wtype)
@@ -401,6 +525,12 @@ class InspectorPanel(QScrollArea):
             self._set_many(rebuild=True, type=wtype, channel=MAP_CHANNEL)
         elif wtype == "climb":
             self._set_many(rebuild=True, type=wtype, channel="elevation")
+        elif wtype == "gainloss":
+            self._set_many(rebuild=True, type=wtype, channel="elevation_gain")
+        elif wtype == "progress" and cfg.channel not in PROGRESS_CHANNELS:
+            self._set_many(rebuild=True, type=wtype, channel="distance")
+        elif wtype == "scope" and cfg.channel in (CLOCK_CHANNEL, MAP_CHANNEL):
+            self._set_many(rebuild=True, type=wtype, channel="speed")
         elif cfg.channel == MAP_CHANNEL:
             self._set_many(rebuild=True, type=wtype, channel="elevation" if wtype == "profile" else "speed")
         else:
@@ -480,12 +610,21 @@ class InspectorPanel(QScrollArea):
         if rebuild or key in ("background", "theme", "show_attribution"):
             self.schedule_rebuild()
 
-    def _set_style(self, key: str, value) -> None:
+    def _set_style(self, key: str, value, rebuild: bool = False) -> None:
         cfg = self._cfg
         if self._building or cfg is None:
             return
+        old = getattr(cfg.style, key)
         setattr(cfg.style, key, value)
+        try:
+            cfg.style.validate()
+        except ValueError as exc:
+            setattr(cfg.style, key, old)
+            self.c.message.emit(str(exc))
+            return
         self.c.layout_edited(self)
+        if rebuild:
+            self.schedule_rebuild()
 
     def _change_anchor(self, anchor: str) -> None:
         """Ankerpunkt wechseln, ohne dass das Widget springt."""

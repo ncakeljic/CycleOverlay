@@ -4,6 +4,51 @@ Versionen nach dem Schema **MAJOR.MINOR.PATCH**: PATCH = Fehlerbehebungen, MINOR
 Funktionen, MAJOR = inkompatible Änderungen (z. B. am Projektformat). Die laufende Version
 steht im Fenstertitel, unter „Hilfe → Über“ und bei `cycle-overlay --version`.
 
+## 1.10.1
+
+### Behoben
+- Test zur Schriftbreite: Das Widget war zu schmal, die Zahl wurde deshalb automatisch verkleinert
+  und der Test schlug fehl, obwohl die Breite richtig wirkte. Der Test nutzt jetzt ein breites Widget.
+
+## 1.10.0
+
+### Neu
+- **„Widget hinzufügen“ mit Vorlagen**: links nach Gruppen (Werte, Instrumente, Strecke und Höhe),
+  rechts Beschreibung und nur die passenden Signale. Doppelklick fügt sofort hinzu; Vorlagen ohne
+  passendes Signal in der Fahrt sind ausgegraut.
+- Neue Gauges (Auswahl aus der Telemetry-Overlay-Liste):
+  - **Tacho mit Nadel** – spitzer Zeiger (Rundinstrument → Zeiger „spitz“) und Zahlen an der Skala.
+  - **Route mit Richtungspfeil** – Streckenübersicht mit Navi-Pfeil statt Punkt.
+  - **Distanz mit Fortschritt** – „84,2 / 222 km“ oder „noch 138 km“ mit Fortschrittsbalken
+    (auch für Höhenmeter und Zeiten).
+  - **Höhenmeter hoch und runter** – ▲ Anstieg und ▼ Abstieg in einem Widget (neues Signal
+    „Höhenmeter abwärts“).
+  - **Scope** – laufender Graph der letzten Sekunden (Zeitspanne einstellbar).
+  - **Zonen-Balken** – jede Zone in ihrer Farbe („alle Abschnitte“); Knopf „5 Zonen verteilen“.
+  - **Marker im Bereich** – eine Marke wandert zwischen Min und Max, Zonen als farbige Skala.
+  - **Mini mit Symbol** – Symbol (Herz, Blitz, Tacho, Kurbel, Berg …) vor dem Wert.
+  - **Profil-Ecke** – randloses Profil, Wert neben der Marke, wahlweise zusätzlich in m und ft.
+  - **Freie Routenlinie** – nur weiße Linie mit Punkt, ohne Kasten.
+- Alle Optionen auch einzeln im Widget-Tab: Zeigerform, Skalenzahlen, Balkenform, Zonen-Darstellung,
+  Symbol, Positionsmarke, Wert an der Marke, zweite Einheit, Fortschrittsanzeige, Scope-Zeitspanne.
+
+## 1.9.0
+
+### Neu
+- **Schrift-Abschnitt** im Widget-Tab (eigener Abschnitt „Schrift“, getrennt von „Farben & Effekte“):
+  - **Schriftstile zum Anklicken** – acht Kacheln, jede zeigt „43 km/h“ in ihrer Schrift:
+    Klassisch, Schmal, Lang und dünn, Plakat, Klein und fett, Rund, Technisch, Rennen kursiv.
+  - Feineinstellung: Schriftart, Stärke der Zahl (dünn/normal/fett/extra fett), Stärke von
+    Beschriftung und Einheit, Breite (60–140 %), Zeichenabstand, kursiv, Größe der Beschriftung und
+    der Einheit (50–200 %), Beschriftung in Großbuchstaben.
+  - „Schrift auf alle Widgets übertragen“ (mit Rückfrage).
+- **Sechs mitgelieferte Schriften** (SIL Open Font License), die auf Mac und Windows gleich aussehen:
+  Inter, Roboto Condensed, Anton, Fira Sans, Montserrat, Archivo Black. Sie stehen in der
+  Schriftauswahl oben, darunter alle Schriften des Systems.
+- **Farben & Effekte**: Schattenabstand, Konturstärke, Eckenrundung der Kachel (eckig bis Pille);
+  „Farben und Effekte auf alle übertragen“.
+- GitHub-Release-Ablauf auf aktuelle Action-Versionen (Node.js 24) umgestellt.
+
 ## 1.8.0
 
 ### Neu

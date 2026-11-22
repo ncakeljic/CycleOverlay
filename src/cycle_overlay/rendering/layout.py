@@ -28,7 +28,11 @@ ANCHORS: dict[str, tuple[float, float]] = {
     "bottom_right": (1.0, 1.0),
 }
 
-WIDGET_TYPES = ("text", "arc", "bar", "map", "profile", "minimap", "climb")
+WIDGET_TYPES = ("text", "arc", "bar", "map", "profile", "minimap", "climb", "progress", "gainloss", "scope")
+#: Signale, für die eine Fortschrittsanzeige (gefahren / gesamt) sinnvoll ist – kumulierte Größen
+PROGRESS_CHANNELS = ("distance", "elevation_gain", "elevation_loss", "elapsed_time", "moving_time")
+#: Signale, die nicht als laufender Graph (Scope) taugen
+NO_SCOPE_CHANNELS = ("time_of_day", "position")
 POSITION_TYPES = ("map", "minimap")
 SCOPES = ("full", "clip")
 MAP_CHANNEL = "position"
@@ -60,11 +64,38 @@ class Style:
     shadow_color: str = "#0000009A"
     outline: bool = False
     outline_color: str = "#000000C0"
+    # --- Schrift (siehe rendering.typography)
+    value_weight: str = "bold"  # Strichstärke der Zahl
+    label_weight: str = "semibold"  # Strichstärke von Beschriftung und Einheit
+    font_width: float = 1.0  # horizontale Streckung: < 1 schmaler, > 1 breiter
+    tracking: float = 0.0  # Laufweite (Abstand zwischen Zeichen) in % der Schriftgröße
+    italic: bool = False
+    label_scale: float = 1.0  # Größe der Beschriftung relativ zum Standard
+    unit_scale: float = 1.0  # Größe der Einheit relativ zum Standard
+    label_uppercase: bool = False  # Beschriftung in Großbuchstaben
+    # --- Effekte
+    shadow_distance: float = 1.0  # Schattenabstand relativ zum Standard (0 = direkt dahinter, weich)
+    outline_width: float = 1.0  # Konturstärke relativ zum Standard
+    badge_radius: float = 0.14  # Eckenrundung der Kachel (Anteil der Höhe, 0 = eckig, 0.5 = Pille)
 
     def validate(self) -> None:
+        from .typography import TEXT_SCALE_RANGE, TRACKING_RANGE, WEIGHTS, WIDTH_RANGE
+
         for f in fields(self):
             if f.name.endswith("_color"):
                 parse_color(getattr(self, f.name))
+        for key in ("value_weight", "label_weight"):
+            if getattr(self, key) not in WEIGHTS:
+                raise ValueError(f"Unbekannte Schriftstärke: {getattr(self, key)!r}")
+        checks = (("font_width", WIDTH_RANGE, "Schriftbreite"), ("tracking", TRACKING_RANGE, "Laufweite"),
+                  ("label_scale", TEXT_SCALE_RANGE, "Größe der Beschriftung"),
+                  ("unit_scale", TEXT_SCALE_RANGE, "Größe der Einheit"),
+                  ("shadow_distance", (0.0, 4.0), "Schattenabstand"), ("outline_width", (0.2, 4.0), "Konturstärke"),
+                  ("badge_radius", (0.0, 0.5), "Eckenrundung"))
+        for key, (lo, hi), title in checks:
+            v = float(getattr(self, key))
+            if not lo - 1e-9 <= v <= hi + 1e-9:
+                raise ValueError(f"{title} muss zwischen {lo:g} und {hi:g} liegen")
 
 
 @dataclass
@@ -76,7 +107,7 @@ class Zone:
 
 
 _DEFAULT_ASPECT = {"text": 2.4, "arc": 1.0, "bar_horizontal": 4.0, "bar_vertical": 0.32, "map": 1.0, "profile": 3.6,
-                   "minimap": 1.0, "climb": 2.8}
+                   "minimap": 1.0, "climb": 2.8, "progress": 4.2, "gainloss": 2.4, "scope": 2.6}
 
 DEFAULT_GRADE_STEPS = [-2.0, 2.0, 5.0, 8.0, 12.0]
 DEFAULT_GRADE_COLORS = ["#3D8BFF", "#3DDC84", "#FFD43B", "#FF8C1A", "#FF3B3B", "#B0003A"]
@@ -200,8 +231,23 @@ class WidgetConfig:
     sweep_deg: float = 270.0
     show_needle: bool = False
     show_ticks: bool = True
+    needle_style: str = "line"  # "line" = Strich · "pointer" = spitzer Zeiger
+    show_tick_labels: bool = False  # Zahlen an der Skala
     # Balken
     orientation: str = "horizontal"
+    bar_style: str = "fill"  # "fill" = Füllbalken · "marker" = Marke wandert zwischen Min und Max
+    zone_fill: str = "solid"  # "solid" = ganze Füllung in Zonenfarbe · "segments" = jede Zone in ihrer Farbe
+    # Wert + Beschriftung
+    show_icon: bool = False  # Symbol vor dem Wert (Herz, Blitz …)
+    # Streckenübersicht
+    position_marker: str = "dot"  # "dot" = Punkt · "arrow" = Pfeil in Fahrtrichtung
+    # Profil
+    value_at_marker: bool = False  # Wert neben der Positionsmarke statt oben
+    alt_unit: bool = False  # zusätzlich in der anderen Einheit (m und ft, km/h und mph)
+    # Fortschritt
+    progress_mode: str = "ridden_total"  # "ridden_total" = 84 / 222 km · "remaining" = noch 138 km
+    # Scope
+    scope_window_s: float = 30.0  # gezeigte Zeitspanne vor dem aktuellen Moment
     #: Strichstärke von Bogen/Balken relativ zur Widget-Höhe
     stroke: float = 0.085
     # Streckenkarte / Profil
@@ -274,6 +320,20 @@ class WidgetConfig:
             raise ValueError(f"{self.id}: die Anstiegs-Vorschau gehört zum Signal 'elevation'")
         if self.orientation not in ("horizontal", "vertical"):
             raise ValueError(f"{self.id}: unbekannte Ausrichtung {self.orientation!r}")
+        choices = {"needle_style": ("line", "pointer"), "bar_style": ("fill", "marker"),
+                   "zone_fill": ("solid", "segments"), "position_marker": ("dot", "arrow"),
+                   "progress_mode": ("ridden_total", "remaining")}
+        for key, allowed in choices.items():
+            if getattr(self, key) not in allowed:
+                raise ValueError(f"{self.id}: ungültiger Wert für {key}: {getattr(self, key)!r}")
+        if self.type == "progress" and self.channel not in PROGRESS_CHANNELS:
+            raise ValueError(f"{self.id}: Fortschritt gibt es nur für Distanz, Höhenmeter und Zeiten")
+        if self.type == "gainloss" and self.channel != "elevation_gain":
+            raise ValueError(f"{self.id}: „Höhenmeter hoch/runter“ gehört zum Signal 'elevation_gain'")
+        if self.type == "scope" and self.channel in NO_SCOPE_CHANNELS:
+            raise ValueError(f"{self.id}: Uhrzeit und Position lassen sich nicht als Verlauf zeigen")
+        if not 3 <= self.scope_window_s <= 600:
+            raise ValueError(f"{self.id}: Zeitspanne des Verlaufs muss zwischen 3 s und 10 min liegen")
         if not 0 < self.size <= 1:
             raise ValueError(f"{self.id}: size muss zwischen 0 und 1 liegen")
         if self.min_value is not None and self.max_value is not None and self.max_value <= self.min_value:

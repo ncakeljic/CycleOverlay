@@ -351,7 +351,7 @@ class MainWindow(QMainWindow):
     def about(self) -> None:
         QMessageBox.about(self, f"Über {APP_NAME}",
                           f"<b>{APP_NAME} {__version__}</b><br>GPX-Telemetrie als transparentes Video-Overlay.<br><br>"
-                          "Schrift: Inter (SIL Open Font License)<br>Video: FFmpeg")
+                          "Schriften: Inter, Roboto, Anton, Fira Sans, Montserrat, Archivo Black (SIL Open Font License)<br>Video: FFmpeg")
 
     def open_paths(self, paths: list[str]) -> None:
         """Dateien per Drag-and-Drop oder Kommandozeile öffnen."""

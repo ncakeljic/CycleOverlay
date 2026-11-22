@@ -24,6 +24,7 @@ CHANNELS: dict[str, ChannelInfo] = {
     "elevation": ChannelInfo("ALT", "Höhe", "elevation", 0),
     "gradient": ChannelInfo("GRADE", "Steigung", "percent", 1),
     "elevation_gain": ChannelInfo("GAIN", "Höhenmeter", "elevation", 0),
+    "elevation_loss": ChannelInfo("LOSS", "Höhenmeter abwärts", "elevation", 0),
     "vam": ChannelInfo("VAM", "VAM / Steigrate", "vam", 0),
     "power": ChannelInfo("POWER", "Leistung", "power", 0),
     "heart_rate": ChannelInfo("HR", "Herzfrequenz", "heart_rate", 0),

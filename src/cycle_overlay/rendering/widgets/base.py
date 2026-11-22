@@ -33,6 +33,6 @@ class OverlayWidget:
         if ellipse:
             p.drawEllipse(rect)
         else:
-            r = min(rect.width(), rect.height()) * 0.14
+            r = min(rect.width(), rect.height()) * max(0.0, min(st.badge_radius, 0.5))
             p.drawRoundedRect(rect, r, r)
         p.restore()

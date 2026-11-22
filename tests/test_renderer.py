@@ -480,3 +480,134 @@ def test_descent_scheme_colors_route(telemetry):
     b = widget(id="mm", type="minimap", channel="position", anchor="center", x=0.0, y=0.0, size=0.6,
                minimap=a.minimap, grade_steps=steps, grade_colors=list(colors))
     assert _changed(_render(telemetry, a, t=870.0), _render(telemetry, b, t=870.0), a) > 0.002
+
+
+# --------------------------------------------------------------------------- Schrift
+
+
+def _ink_columns(a, cfg) -> int:
+    x, y, w, h = (int(round(v)) for v in cfg.rect(W, H))
+    return int((a[y:y + h, x:x + w, 3] > 40).any(axis=0).sum())
+
+
+def test_bundled_fonts_are_registered():
+    from PySide6.QtGui import QFontDatabase
+
+    from cycle_overlay.rendering.typography import BUNDLED_FAMILIES
+
+    load_bundled_fonts()
+    fams = set(QFontDatabase.families())
+    assert set(BUNDLED_FAMILIES) <= fams, set(BUNDLED_FAMILIES) - fams
+
+
+@pytest.mark.parametrize("key", ["classic", "condensed", "tall_thin", "poster", "compact_bold", "round",
+                                 "technical", "race"])
+def test_type_presets_render(telemetry, key):
+    from cycle_overlay.rendering.typography import apply_preset
+
+    cfg = widget(id="s", type="text", channel="speed", size=0.25)
+    apply_preset(cfg.style, key)
+    a = _render(telemetry, cfg)
+    assert _ink_columns(a, cfg) > 20
+
+
+def test_font_width_and_weight_change_the_text(telemetry):
+    # breites Widget, damit die Zahl nicht wegen Platzmangels verkleinert wird
+    narrow = widget(id="s", type="text", channel="speed", size=0.15, aspect=6.0, label_position="none")
+    wide = widget(id="s", type="text", channel="speed", size=0.15, aspect=6.0, label_position="none")
+    narrow.style.font_width, wide.style.font_width = 0.7, 1.3
+    a, b = _render(telemetry, narrow), _render(telemetry, wide)
+    assert _ink_columns(b, wide) > _ink_columns(a, narrow) * 1.4
+    thin = widget(id="s", type="text", channel="speed", size=0.3, label_position="none")
+    thin.style.value_weight = "light"
+    t = _render(telemetry, thin)
+    norm = _render(telemetry, widget(id="s", type="text", channel="speed", size=0.3, label_position="none"))
+    assert (t[..., 3] > 128).sum() < (norm[..., 3] > 128).sum() * 0.85  # dünner = weniger Farbe
+    ital = widget(id="s", type="text", channel="speed", size=0.3, label_position="none")
+    ital.style.italic = True
+    assert _changed(_render(telemetry, ital), norm, ital) > 0.002
+
+
+def test_label_scale_and_uppercase(telemetry):
+    from cycle_overlay.core.processor import frame_times as ft
+
+    cfg = widget(id="s", type="text", channel="speed", size=0.3, label="Tempo")
+    values = FrameValues(telemetry, ft(150.0, 1, 30))
+    assert values.label(cfg) == "Tempo"
+    cfg.style.label_uppercase = True
+    assert values.label(cfg) == "TEMPO"
+    big = widget(id="s", type="text", channel="speed", size=0.3)
+    big.style.label_scale = 1.8
+    assert _changed(_render(telemetry, big), _render(telemetry, widget(id="s", type="text", channel="speed",
+                                                                         size=0.3)), big) > 0.002
+
+
+# --------------------------------------------------------------------------- neue Gauges (Vorlagen)
+
+
+@pytest.fixture()
+def model_with_gpx():
+    from cycle_overlay.core.project import ProjectModel
+
+    m = ProjectModel()
+    m.load_gpx(SAMPLE_GPX)
+    return m
+
+
+def _render_model(m, cfg, t=450.0):
+    values = m.frame_values(frame_times(t, 1, 30))
+    return image_to_rgba(CanvasRenderer(Layout("t", [cfg]), values, W, H).render(0)).astype(int)
+
+
+@pytest.mark.parametrize("key", ["text", "mini", "gainloss", "progress", "arc", "needle", "bar", "zone_bar", "marker",
+                                 "scope", "map", "map_arrow", "route_line", "profile", "profile_corner", "climb"])
+def test_every_template_renders(model_with_gpx, key):
+    m = model_with_gpx
+    cfg = m.add_from_template(key)
+    a = _render_model(m, cfg)
+    x, y, w, h = (int(round(v)) for v in cfg.rect(W, H))
+    assert (a[max(y, 0):y + h, max(x, 0):x + w, 3] > 40).sum() > 50, key
+
+
+def test_template_options_change_the_picture(model_with_gpx):
+    m = model_with_gpx
+    pairs = [("map", "position_marker", "arrow"), ("bar", "bar_style", "marker"), ("arc", "needle_style", "pointer"),
+             ("text", "show_icon", True), ("profile", "value_at_marker", True)]
+    for key, attr, val in pairs:
+        cfg = m.add_from_template(key)
+        if key == "arc":
+            cfg.show_needle = True
+        before = _render_model(m, cfg)
+        setattr(cfg, attr, val)
+        after = _render_model(m, cfg)
+        assert _changed(before, after, cfg) > 0.001, (key, attr)
+
+
+def test_zone_segments_show_all_colors(model_with_gpx):
+    m = model_with_gpx
+    cfg = m.add_from_template("zone_bar")
+    cfg.min_value, cfg.max_value = 0.0, 1.0  # Wert über dem Maximum -> voller Balken
+    cfg.zones = [type(cfg.zones[0])(0.0, "#0000FF"), type(cfg.zones[0])(0.5, "#FF0000")]
+    a = _render_model(m, cfg)
+    x, y, w, h = (int(round(v)) for v in cfg.rect(W, H))
+    box = a[y:y + h, x:x + w]
+    blue = ((box[..., 2] > 200) & (box[..., 0] < 60) & (box[..., 3] > 200)).sum()
+    red = ((box[..., 0] > 200) & (box[..., 2] < 60) & (box[..., 3] > 200)).sum()
+    assert blue > 30 and red > 30
+
+
+def test_progress_and_gainloss_texts(model_with_gpx):
+    from cycle_overlay.rendering.widgets.gainloss import GainLossWidget
+    from cycle_overlay.rendering.widgets.progress import ProgressWidget
+
+    m = model_with_gpx
+    values = m.frame_values(frame_times(450.0, 1, 30))
+    cfg = m.add_from_template("progress")
+    pw = ProgressWidget(cfg, values)
+    parts = pw.parts(0)
+    assert parts[0][0] == "value" and parts[1][1].startswith("/ ") and 0 < pw.fraction(0) < 1
+    cfg.progress_mode = "remaining"
+    assert ProgressWidget(cfg, values).parts(0)[0] == ("small", "noch")
+    gl = m.add_from_template("gainloss")
+    rows = GainLossWidget(gl, values).rows(0)
+    assert [r[0] for r in rows] == ["up", "down"] and all(r[1] not in ("", "--") for r in rows)

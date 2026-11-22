@@ -21,27 +21,37 @@ class TextMetricWidget(OverlayWidget):
 
         if lp in ("top", "bottom"):
             label_cap, value_cap, unit_cap = 0.15 * h, 0.50 * h, 0.20 * h
+            # größere Beschriftung nimmt der Zahl Höhe weg (und umgekehrt)
+            grown = 0.15 * h * (st.label_scale - 1.0)
+            label_cap *= st.label_scale
+            value_cap = min(max(value_cap - grown, 0.28 * h), 0.62 * h)
         elif lp == "left":
-            label_cap, value_cap, unit_cap = 0.17 * h, 0.56 * h, 0.22 * h
+            label_cap, value_cap, unit_cap = 0.17 * h * st.label_scale, 0.56 * h, 0.22 * h
         else:
             label_cap, value_cap, unit_cap = 0.0, 0.62 * h, 0.24 * h
+        unit_cap *= st.unit_scale
 
-        family = st.font_family
         gap_unit = 0.06 * h
         gap_label = 0.10 * h
 
         def fonts(scale: float):
             return (
-                font_for_cap(family, label_cap * (scale if lp == "left" else 1.0), WEIGHT_LABEL) if label_cap else None,
-                font_for_cap(family, value_cap * scale, WEIGHT_VALUE),
-                font_for_cap(family, unit_cap * scale, WEIGHT_UNIT),
+                font_for_cap(st, label_cap * (scale if lp == "left" else 1.0), WEIGHT_LABEL, scaled=False)
+                if label_cap else None,
+                font_for_cap(st, value_cap * scale, WEIGHT_VALUE),
+                font_for_cap(st, unit_cap * scale, WEIGHT_UNIT, scaled=False),
             )
+
+        icon = cfg.show_icon
+
+        def icon_w(scale: float) -> float:
+            return (value_cap * scale * 1.05 + gap_label * scale) if icon else 0.0
 
         def row_width(fl, fv, fu, scale: float) -> float:
             wv = text_width(fv, number)
             wu = (gap_unit * scale + text_width(fu, unit)) if unit else 0.0
             wl = (text_width(fl, label) + gap_label * scale) if (lp == "left" and fl) else 0.0
-            return wl + wv + wu
+            return icon_w(scale) + wl + wv + wu
 
         # Zu breiter Text (z. B. "1234 W" in einem schmalen Widget) wird verkleinert
         scale = 1.0
@@ -74,6 +84,14 @@ class TextMetricWidget(OverlayWidget):
             label_base = y + h / 2 + label_cap * (scale if lp == "left" else 1.0) / 2
 
         cx = start_x(total)
+        if icon:
+            from .icons import draw_icon, icon_for
+
+            s_icon = v_cap * 1.05
+            draw_icon(p, icon_for(cfg.channel), QRectF(cx, value_base - v_cap / 2 - s_icon / 2, s_icon, s_icon),
+                      v.fill_color(cfg, i) if cfg.zones else st.accent_color,
+                      st.shadow_color if st.shadow else None)
+            cx += icon_w(scale)
         if lp == "left" and f_label is not None:
             draw_text(p, label, f_label, cx, label_base, st.label_color, st)
             cx += text_width(f_label, label) + gap_label * scale

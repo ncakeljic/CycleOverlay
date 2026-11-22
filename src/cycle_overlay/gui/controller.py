@@ -416,11 +416,34 @@ class Controller(QObject):
         self.layout_edited()
         self.select(cfg.id)
 
+    def add_from_template(self, key: str, channel: str | None = None) -> None:
+        try:
+            cfg = self.model.add_from_template(key, channel)
+        except ValueError as exc:
+            self.error.emit("Widget hinzufügen", str(exc))
+            return
+        self.layout_edited()
+        self.select(cfg.id)
+
     def remove_selected(self) -> None:
         if self.selected:
             self.model.remove_widget(self.selected)
             self.select("")
             self.layout_edited()
+
+    def apply_style_to_all(self, source, keys) -> int:
+        """Stil-Einstellungen (``keys`` aus ``Style``) von ``source`` auf alle anderen Widgets übertragen."""
+        n = 0
+        for w in self.model.project.layout.widgets:
+            if w is source:
+                continue
+            for k in keys:
+                setattr(w.style, k, getattr(source.style, k))
+            n += 1
+        if n:
+            self.layout_edited()
+            self.message.emit(f"Auf {n} weitere Widget(s) übertragen.")
+        return n
 
     def duplicate_selected(self) -> None:
         if self.selected:

@@ -79,6 +79,29 @@ class RouteMapWidget(OverlayWidget):
         if not rect.adjusted(-lw, -lw, lw, lw).contains(cur):
             return  # außerhalb des Kartenausschnitts (Bereich "Clip")
         radius = lw * 1.9
+        if cfg.position_marker == "arrow":
+            self._arrow(p, cur, radius * 2.2, v.heading(i, 25.0), lw)
+            return
         p.setPen(round_pen(st.text_color, lw * 0.7))
         p.setBrush(QBrush(qcolor(v.fill_color(cfg, i))))
         p.drawEllipse(cur, radius, radius)
+
+    def _arrow(self, p: QPainter, cur: QPointF, size: float, heading_deg: float, lw: float) -> None:
+        """Navi-Pfeil an der aktuellen Position, Spitze in Fahrtrichtung (Norden oben)."""
+        st = self.cfg.style
+        h = math.radians(heading_deg if math.isfinite(heading_deg) else 0.0)
+        fx, fy = math.sin(h), -math.cos(h)  # Fahrtrichtung auf dem Bildschirm
+        nx, ny = -fy, fx  # quer dazu
+
+        def at(along: float, across: float) -> QPointF:
+            return QPointF(cur.x() + fx * along * size + nx * across * size,
+                           cur.y() + fy * along * size + ny * across * size)
+
+        poly = QPolygonF([at(0.6, 0.0), at(-0.45, 0.45), at(-0.2, 0.0), at(-0.45, -0.45)])
+        if st.shadow:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QBrush(qcolor(st.shadow_color)))
+            p.drawPolygon(poly.translated(lw * 0.4, lw * 0.6))
+        p.setPen(round_pen(st.text_color, lw * 0.6))
+        p.setBrush(QBrush(qcolor(st.accent_color)))
+        p.drawPolygon(poly)

@@ -16,7 +16,7 @@ import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPainterPath, QPen, QPolygonF, QTransform
 
-from ..grade import class_runs, grade_class, grade_color, lowest_reference, smooth_grade
+from ..grade import grade_class, grade_color, lowest_reference, smooth_grade
 from ..minimap_geometry import ROUTE_FADE_LEVELS, nice_scale, route_fade_levels, segment_levels, segment_runs
 from ..minimap_theme import THEMES
 from ..qt_support import WEIGHT_LABEL, WEIGHT_VALUE, font_for_cap, qcolor, text_width
@@ -106,7 +106,7 @@ class MinimapWidget(OverlayWidget):
         if mm.show_scale and cam.tilt_deg == 0:
             self._draw_scale(p, cam, sr, theme, size)
         if drew_osm and mm.show_attribution:
-            f = font_for_cap(cfg.style.font_family, size * 0.03, WEIGHT_LABEL)
+            f = font_for_cap(cfg.style, size * 0.03, WEIGHT_LABEL)
             txt = idx.data.attribution if idx is not None else ""
             c = qcolor(theme.text)
             c.setAlpha(170)
@@ -298,7 +298,7 @@ class MinimapWidget(OverlayWidget):
         ax, ay = cam.anchor_xy
         s = self.cfg.minimap.arrow_size * size
         cap = s * 0.32
-        f = font_for_cap(self.cfg.style.font_family, cap, WEIGHT_VALUE)
+        f = font_for_cap(self.cfg.style, cap, WEIGHT_VALUE)
         txt = f"{abs(g):.0f} %"
         tri = cap * 1.1
         w = text_width(f, txt) + tri + cap * 1.4
@@ -372,7 +372,7 @@ class MinimapWidget(OverlayWidget):
         p.setPen(_pen(theme.border, max(size * 0.008, 1.0)))
         p.setBrush(QBrush(qcolor(theme.background)))
         p.drawEllipse(QPointF(cx, cy), r, r)
-        f = font_for_cap(self.cfg.style.font_family, r * 0.9, WEIGHT_VALUE)
+        f = font_for_cap(self.cfg.style, r * 0.9, WEIGHT_VALUE)
         p.setFont(f)
         p.setPen(qcolor(theme.text))
         p.drawText(QPointF(cx - text_width(f, "N") / 2, cy + r * 0.45), "N")
@@ -394,7 +394,7 @@ class MinimapWidget(OverlayWidget):
         p.drawLine(QPointF(x0, y0), QPointF(x0 + px, y0))
         for xx in (x0, x0 + px):
             p.drawLine(QPointF(xx, y0 - size * 0.015), QPointF(xx, y0 + size * 0.015))
-        f = font_for_cap(self.cfg.style.font_family, size * 0.03, WEIGHT_LABEL)
+        f = font_for_cap(self.cfg.style, size * 0.03, WEIGHT_LABEL)
         p.setFont(f)
         p.setPen(qcolor(theme.text))
         p.drawText(QPointF(sr.center().x() - text_width(f, label) / 2, y0 - size * 0.025), label)

@@ -34,7 +34,7 @@ from ..export.profiles import (
     estimate_size_bytes,
 )
 from ..export.video_encoders import QUALITIES
-from ..rendering.layout import MAP_CHANNEL, Layout, WidgetConfig
+from ..rendering.layout import MAP_CHANNEL, Layout, WidgetConfig, Zone
 from ..rendering.values import CLOCK_CHANNEL, FrameValues
 from .osm import MapData, MapDataError, fetch_map_data
 from .track_loader import load_track_bytes
@@ -651,7 +651,7 @@ class ProjectModel:
                 unit = unit_for(ch, u)
                 d = info.decimals
                 mx = float(convert(ch, st.max, u)[0])
-                if ch in ("distance", "elevation_gain"):
+                if ch in ("distance", "elevation_gain", "elevation_loss"):
                     summary = f"{mx:.{d}f} {unit}"
                 else:
                     mn = float(convert(ch, st.min, u)[0])
@@ -680,7 +680,8 @@ class ProjectModel:
         while wid in ids:
             n += 1
             wid = f"{base}_{n}"
-        size = {"text": 0.085, "arc": 0.24, "bar": 0.09, "map": 0.3, "profile": 0.16, "minimap": 0.3, "climb": 0.13}[wtype]
+        size = {"text": 0.085, "arc": 0.24, "bar": 0.09, "map": 0.3, "profile": 0.16, "minimap": 0.3, "climb": 0.13,
+                "progress": 0.075, "gainloss": 0.11, "scope": 0.12}[wtype]
         cfg = WidgetConfig(id=wid, type=wtype, channel=channel, anchor="center", x=0.0, y=0.0, size=size)
         if wtype == "bar" and channel in ("heart_rate", "power"):
             cfg.update_rate_hz = 2.0
@@ -689,6 +690,35 @@ class ProjectModel:
             cfg.update_rate_hz = 2.0
         cfg.validate()
         self.project.layout.widgets.append(cfg)
+        return cfg
+
+    def add_from_template(self, key: str, channel: str | None = None) -> WidgetConfig:
+        """Widget aus einer Vorlage (``rendering.templates``) anlegen – mit deren Einstellungen."""
+        from ..rendering.templates import TEMPLATES, channels_for, even_zones
+
+        tpl = TEMPLATES[key]
+        if channel is None:
+            options = channels_for(tpl, self.available_channels())
+            if not options:
+                raise ValueError(f"„{tpl.title}“ braucht ein Signal, das in dieser Fahrt fehlt.")
+            channel = options[0]
+        if not tpl.allows(channel):
+            raise ValueError(f"„{tpl.title}“ passt nicht zum Signal {channel!r}.")
+        cfg = self.add_widget(channel, tpl.wtype)
+        try:
+            for k, val in tpl.cfg.items():
+                setattr(cfg, k, val)
+            for k, val in tpl.style.items():
+                setattr(cfg.style, k, val)
+            if tpl.size:
+                cfg.size = tpl.size
+            if tpl.auto_zones and self.telemetry is not None:
+                lo, hi = self.frame_values([0.0]).range(cfg)
+                cfg.zones = [Zone(v, c) for v, c in even_zones(lo, hi)]
+            cfg.validate()
+        except Exception:
+            self.remove_widget(cfg.id)
+            raise
         return cfg
 
     def remove_widget(self, wid: str) -> None:

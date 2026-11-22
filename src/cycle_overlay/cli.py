@@ -131,7 +131,7 @@ def cmd_info(args) -> int:
             av, _ = convert(ch, st.mean, u)
             mx, _ = convert(ch, st.max, u)
             d = info.decimals
-            if ch in ("distance", "elevation_gain"):  # kumulierte Werte: nur Endwert sinnvoll
+            if ch in ("distance", "elevation_gain", "elevation_loss"):  # kumulierte Werte: nur Endwert sinnvoll
                 mn = av = math.nan
             print(f"{info.title:<18}{'ja':<6}{st.coverage * 100:>9.0f}%{_num(mn, d):>10}{_num(av, d):>10}{_num(mx, d):>10}  {unit}")
         else:

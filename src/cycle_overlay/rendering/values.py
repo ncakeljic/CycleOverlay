@@ -15,7 +15,7 @@ import numpy as np
 
 from .i18n import DEFAULT_LANGUAGE, channel_text
 from ..core.models import Telemetry
-from ..core.units import CHANNELS, METRIC, convert, format_duration, unit_for
+from ..core.units import CHANNELS, IMPERIAL, METRIC, convert, format_duration, unit_for
 from .layout import MAP_CHANNEL, WidgetConfig
 
 CLOCK_CHANNEL = "time_of_day"
@@ -253,7 +253,8 @@ class FrameValues:
     # ------------------------------------------------------------------ für Widgets
 
     def label(self, w: WidgetConfig) -> str:
-        return w.label if w.label is not None else channel_label(w.channel, self.language)
+        text = w.label if w.label is not None else channel_label(w.channel, self.language)
+        return text.upper() if w.style.label_uppercase else text
 
     def decimals(self, w: WidgetConfig) -> int:
         if w.decimals is not None:
@@ -276,6 +277,42 @@ class FrameValues:
             return format_duration(v), ""
         v = float(convert(w.channel, self.counted(w.channel, i, w.update_rate_hz), self.units)[0])
         return format_number(v, self.decimals(w)), (self.unit(w.channel) if w.show_unit else "")
+
+    def alt_text(self, w: WidgetConfig, i: int) -> tuple[str, str] | None:
+        """Derselbe Wert in der jeweils anderen Einheit (m ↔ ft, km/h ↔ mph); None, wenn es keine gibt."""
+        if w.channel in (CLOCK_CHANNEL, MAP_CHANNEL) or CHANNELS[w.channel].kind == "duration":
+            return None
+        other = IMPERIAL if self.units == METRIC else METRIC
+        unit = unit_for(w.channel, other)
+        if unit == unit_for(w.channel, self.units):
+            return None
+        v = float(convert(w.channel, self.counted(w.channel, i, w.update_rate_hz), other)[0])
+        return format_number(v, self.decimals(w)), unit
+
+    def total(self, channel: str) -> float:
+        """Endwert eines kumulierten Signals (Distanz, Höhenmeter, Zeit) über die ganze Fahrt – SI."""
+        arr = self.tel.channels.get(channel)
+        if arr is None or arr.size == 0:
+            return math.nan
+        finite = arr[np.isfinite(arr)]
+        return float(finite[-1]) if finite.size else math.nan
+
+    def format_value(self, channel: str, si_value: float, decimals: int) -> tuple[str, str]:
+        """Beliebigen Wert (SI) wie die Anzeige formatieren: (Zahl, Einheit)."""
+        if CHANNELS[channel].kind == "duration":
+            return format_duration(si_value), ""
+        v = float(convert(channel, si_value, self.units)[0])
+        return format_number(v, decimals), self.unit(channel)
+
+    def series(self, channel: str, t0: float, t1: float, n: int = 160) -> tuple[np.ndarray, np.ndarray]:
+        """Verlauf eines Signals zwischen Track-Zeit t0 und t1 in Anzeige-Einheiten (für den Scope)."""
+        ts = np.linspace(t0, t1, max(int(n), 2))
+        inside = (ts >= 0) & (ts <= self.tel.duration)
+        vals = np.full(ts.shape, np.nan)
+        if inside.any():
+            raw = self.tel.sample(ts[inside])[channel]
+            vals[inside] = convert(channel, np.asarray(raw, dtype=float), self.units)[0]
+        return ts, vals
 
     def range(self, w: WidgetConfig) -> tuple[float, float]:
         lo, hi = w.min_value, w.max_value

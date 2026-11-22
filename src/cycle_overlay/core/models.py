@@ -25,6 +25,7 @@ TELEMETRY_CHANNELS = (
     "elevation",
     "gradient",
     "elevation_gain",
+    "elevation_loss",
     "vam",
     "power",
     "heart_rate",

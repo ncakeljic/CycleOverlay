@@ -23,6 +23,7 @@ from PySide6.QtGui import (
     QPainter,
     QPainterPath,
     QPen,
+    QTransform,
 )
 
 from ..app_paths import resource_path
@@ -31,9 +32,23 @@ from .layout import Style, parse_color
 _APP: QGuiApplication | None = None
 _FONTS_LOADED = False
 
+#: Rollen eines Textes – die tatsächliche Stärke kommt aus dem Style (value_weight/label_weight)
 WEIGHT_LABEL = QFont.Weight.DemiBold
 WEIGHT_VALUE = QFont.Weight.Bold
 WEIGHT_UNIT = QFont.Weight.Medium
+
+_QT_WEIGHT = {300: QFont.Weight.Light, 400: QFont.Weight.Normal, 500: QFont.Weight.Medium,
+              600: QFont.Weight.DemiBold, 700: QFont.Weight.Bold, 900: QFont.Weight.Black}
+
+
+class StyledFont(QFont):
+    """QFont mit zusätzlicher horizontaler Streckung (``xscale``).
+
+    Die Streckung wird beim Zeichnen als Transformation angewendet und funktioniert damit mit jeder
+    Schrift und auf jedem System gleich (Qt kann Breiten sonst nur, wenn die Schrift sie mitbringt).
+    """
+
+    xscale: float = 1.0
 
 
 def ensure_app() -> QGuiApplication:
@@ -78,11 +93,17 @@ def qcolor(value: str) -> QColor:
     return QColor(r, g, b, a)
 
 
-def make_font(family: str, pixel_size: float, weight: QFont.Weight) -> QFont:
-    f = QFont(family)
+def make_font(family: str, pixel_size: float, weight: QFont.Weight, *, italic: bool = False,
+              xscale: float = 1.0, tracking: float = 0.0) -> StyledFont:
+    f = StyledFont(family)
     f.setPixelSize(max(1, int(round(pixel_size))))
     f.setWeight(weight)
     f.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    if italic:
+        f.setItalic(True)  # ohne Kursivschnitt neigt Qt die Schrift selbst
+    if tracking:
+        f.setLetterSpacing(QFont.SpacingType.PercentageSpacing, 100.0 + float(tracking))
+    f.xscale = float(xscale) if xscale > 0 else 1.0
     try:  # gleich breite Ziffern (Qt >= 6.7), damit Zahlen beim Wechsel nicht springen
         f.setFeature(QFont.Tag("tnum"), 1)  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
@@ -97,13 +118,34 @@ def _cap_ratio(family: str, weight: QFont.Weight) -> float:
     return cap / 200 if cap > 0 else 0.72
 
 
-def font_for_cap(family: str, cap_px: float, weight: QFont.Weight) -> QFont:
-    """Schrift so wählen, dass Großbuchstaben/Ziffern ``cap_px`` hoch sind."""
-    return make_font(family, cap_px / _cap_ratio(family, weight), weight)
+def font_for_cap(style: "Style | str", cap_px: float, role: QFont.Weight, *, scaled: bool = True) -> StyledFont:
+    """Schrift so wählen, dass Großbuchstaben/Ziffern ``cap_px`` hoch sind.
+
+    ``style``: der Style des Widgets (Schrift, Stärken, Breite, Laufweite, Kursiv, Größen) oder nur
+    ein Familienname. ``role``: ``WEIGHT_VALUE`` (Zahl), ``WEIGHT_LABEL`` (Beschriftung) oder
+    ``WEIGHT_UNIT`` (Einheit). Mit ``scaled`` werden Beschriftung/Einheit um ``label_scale``/
+    ``unit_scale`` vergrößert – ``False``, wenn der Aufrufer die Größe schon eingerechnet hat.
+    """
+    if isinstance(style, str):
+        return make_font(style, cap_px / _cap_ratio(style, role), role)
+    from .typography import WEIGHTS
+
+    if role == WEIGHT_VALUE:
+        key, factor = style.value_weight, 1.0
+    elif role == WEIGHT_UNIT:
+        key, factor = style.label_weight, style.unit_scale
+    else:
+        key, factor = style.label_weight, style.label_scale
+    weight = _QT_WEIGHT.get(WEIGHTS.get(key, ("", 700))[1], role)
+    cap = cap_px * (factor if scaled else 1.0)
+    return make_font(style.font_family, cap / _cap_ratio(style.font_family, weight), weight,
+                     italic=style.italic, xscale=style.font_width, tracking=style.tracking)
 
 
 def text_width(font: QFont, text: str) -> float:
-    return QFontMetricsF(font).horizontalAdvance(text) if text else 0.0
+    if not text:
+        return 0.0
+    return QFontMetricsF(font).horizontalAdvance(text) * getattr(font, "xscale", 1.0)
 
 
 def draw_text(p: QPainter, text: str, font: QFont, x: float, baseline: float, color: str, style: Style) -> None:
@@ -111,12 +153,15 @@ def draw_text(p: QPainter, text: str, font: QFont, x: float, baseline: float, co
     if not text:
         return
     path = QPainterPath()
-    path.addText(QPointF(x, baseline), font, text)
+    path.addText(QPointF(0.0, 0.0), font, text)
+    xs = getattr(font, "xscale", 1.0)
+    path = QTransform().translate(x, baseline).scale(xs, 1.0).map(path)
     size = font.pixelSize()
     if style.shadow:
-        p.fillPath(path.translated(size * 0.035, size * 0.05), QBrush(qcolor(style.shadow_color)))
+        d = getattr(style, "shadow_distance", 1.0)
+        p.fillPath(path.translated(size * 0.035 * d, size * 0.05 * d), QBrush(qcolor(style.shadow_color)))
     if style.outline:
-        pen = QPen(qcolor(style.outline_color), max(size * 0.08, 1.0))
+        pen = QPen(qcolor(style.outline_color), max(size * 0.08 * getattr(style, "outline_width", 1.0), 1.0))
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
         p.strokePath(path, pen)
     p.fillPath(path, QBrush(qcolor(color)))

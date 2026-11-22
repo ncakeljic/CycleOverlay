@@ -19,6 +19,7 @@ CHANNEL_LABELS: dict[str, dict[str, str]] = {
         "elevation": "HÖHE",
         "gradient": "STEIGUNG",
         "elevation_gain": "HÖHENMETER",
+        "elevation_loss": "ABWÄRTS",
         "vam": "VAM",
         "power": "LEISTUNG",
         "heart_rate": "PULS",
@@ -35,6 +36,7 @@ CHANNEL_LABELS: dict[str, dict[str, str]] = {
         "elevation": "ALT",
         "gradient": "GRADE",
         "elevation_gain": "GAIN",
+        "elevation_loss": "LOSS",
         "vam": "VAM",
         "power": "POWER",
         "heart_rate": "HR",
@@ -58,6 +60,8 @@ TEXTS: dict[str, dict[str, str]] = {
         "no_descent": "KEINE ABFAHRT",
         "flat": "FLACH",
         "remaining": "noch {dist}",
+        "remaining_prefix": "noch",
+        "remaining_suffix": "",
         "gain_unit_m": "hm",
     },
     "en": {
@@ -69,6 +73,8 @@ TEXTS: dict[str, dict[str, str]] = {
         "no_descent": "NO DESCENT",
         "flat": "FLAT",
         "remaining": "{dist} to go",
+        "remaining_prefix": "",
+        "remaining_suffix": "to go",
         "gain_unit_m": "m",
     },
 }

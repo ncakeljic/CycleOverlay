@@ -18,6 +18,8 @@ from typing import Any, Callable
 
 from ..rendering.layout import WidgetConfig
 from ..rendering.minimap_theme import THEMES
+from ..rendering.typography import LABEL_WEIGHT_OPTIONS, VALUE_WEIGHT_OPTIONS, WEIGHTS
+from ..rendering.typography import summary as type_summary
 from ..rendering.values import CLOCK_CHANNEL
 
 SEGMENT_MAX = 4
@@ -123,25 +125,69 @@ def grade_section(collapsed: bool = True, visible_if: Pred = _always) -> Section
     ], collapsed=collapsed, visible_if=visible_if)
 
 
-def style_section(*, numbers: bool = True, fills: bool = True, outline: bool = True, colors: bool = True,
+def _weights(keys: list[str]) -> list[tuple[str, str]]:
+    return [(k, WEIGHTS[k][0]) for k in keys]
+
+
+def _has_label(cfg: WidgetConfig, _ctx: Any) -> bool:
+    return cfg.type not in ("minimap", "climb") and cfg.label_position != "none"
+
+
+def _has_unit(cfg: WidgetConfig, _ctx: Any) -> bool:
+    return cfg.type not in ("minimap", "climb") and cfg.channel != CLOCK_CHANNEL and cfg.show_unit
+
+
+def type_section() -> Section:
+    """Schrift: fertige Schriftstile zum Anklicken, darunter die Feineinstellungen."""
+    return Section("type", "Schrift", [
+        Field("type_preset", "", "custom", target="style", keys=()),
+        Field("font_family", "Schrift", "font", target="style", rebuild=True),
+        Field("value_weight", "Stärke Zahl", "choice", target="style", options=_weights(VALUE_WEIGHT_OPTIONS),
+              rebuild=True),
+        Field("label_weight", "Stärke Text", "choice", target="style", options=_weights(LABEL_WEIGHT_OPTIONS),
+              rebuild=True, tooltip="Beschriftung und Einheit"),
+        Field("font_width", "Breite", "number", target="style", lo=60, hi=140, step=1, decimals=0, suffix=" %",
+              scale=0.01, slider=True, tooltip="Unter 100 % schmaler und höher wirkend, über 100 % breiter"),
+        Field("tracking", "Zeichenabstand", "number", target="style", lo=-10, hi=40, step=1, decimals=0, suffix=" %",
+              slider=True),
+        Field("italic", "", "bool", target="style", rebuild=True, tooltip="Kursiv"),
+        Field("label_scale", "Größe Beschriftung", "number", target="style", lo=50, hi=200, step=5, decimals=0,
+              suffix=" %", scale=0.01, slider=True, visible_if=_has_label),
+        Field("unit_scale", "Größe Einheit", "number", target="style", lo=50, hi=200, step=5, decimals=0,
+              suffix=" %", scale=0.01, slider=True, visible_if=_has_unit),
+        Field("label_uppercase", "", "bool", target="style", visible_if=_has_label, tooltip="Beschriftung in GROSSBUCHSTABEN"),
+        Field("apply_type_all", "", "custom", target="style", keys=()),
+    ], collapsed=True, summary=lambda c: type_summary(c.style))
+
+
+def style_section(*, fills: bool = True, outline: bool = True, colors: bool = True,
                   badge: bool = True, color_titles: dict[str, str] | None = None) -> Section:
     titles = {"text_color": "Zahl", "label_color": "Beschriftung", "accent_color": "Füllung",
               "track_color": "Hintergrundspur"}
     titles.update(color_titles or {})
-    fields = [Field("font_family", "Schrift", "font", target="style")] if numbers else []
+    fields: list[Field] = []
     for key in ("text_color", "label_color", "accent_color", "track_color") if colors else ():
         if key in ("accent_color", "track_color") and not fills:
             continue
         fields.append(Field(key, titles[key], "color", target="style"))
-    toggles = [("shadow", "Schatten", "shadow_color")]
-    if badge:
-        toggles.append(("badge", "Hintergrund-Kachel", "badge_color"))
+    fields.append(Field("shadow", "Schatten", "custom", target="style", keys=("shadow", "shadow_color")))
+    fields.append(Field("shadow_distance", "Schattenabstand", "number", target="style", lo=0, hi=400, step=10,
+                        decimals=0, suffix=" %", scale=0.01, slider=True,
+                        visible_if=lambda c, _x: c.style.shadow))
     if outline:
-        toggles.insert(1, ("outline", "Kontur", "outline_color"))
-    for key, title, ckey in toggles:
-        fields.append(Field(key, title, "custom", target="style", keys=(key, ckey)))
-    return Section("style", "Farben & Schrift", fields, collapsed=True,
-                   summary=lambda c: c.style.font_family)
+        fields.append(Field("outline", "Kontur", "custom", target="style", keys=("outline", "outline_color")))
+        fields.append(Field("outline_width", "Konturstärke", "number", target="style", lo=20, hi=400, step=10,
+                            decimals=0, suffix=" %", scale=0.01, slider=True,
+                            visible_if=lambda c, _x: c.style.outline))
+    if badge:
+        fields.append(Field("badge", "Hintergrund-Kachel", "custom", target="style", keys=("badge", "badge_color")))
+        fields.append(Field("badge_radius", "Ecken", "number", target="style", lo=0, hi=50, step=1, decimals=0,
+                            suffix=" %", scale=0.01, slider=True, special="eckig",
+                            visible_if=lambda c, _x: c.style.badge))
+    fields.append(Field("apply_style_all", "", "custom", target="style", keys=()))
+    return Section("style", "Farben & Effekte", fields, collapsed=True,
+                   summary=lambda c: " · ".join(t for on, t in ((c.style.shadow, "Schatten"), (c.style.outline, "Kontur"),
+                                                                (c.style.badge, "Kachel")) if on) or "ohne Effekte")
 
 
 # --------------------------------------------------------------------------- Wert, Instrumente, Karte/Profil
@@ -154,6 +200,15 @@ def value_sections() -> list[Section]:
         Field("label", "Beschriftung", "text", tooltip="Leer = Standard"),
         Field("label_position", "Beschriftung", "choice", options=LABEL_POS),
         Field("show_unit", "", "bool", visible_if=not_clock, tooltip="Einheit anzeigen"),
+        Field("show_icon", "", "bool", visible_if=_is("text"), tooltip="Symbol vor dem Wert (Herz, Blitz …)"),
+        Field("progress_mode", "Anzeige", "choice", visible_if=_is("progress"),
+              options=[("ridden_total", "gefahren / gesamt"), ("remaining", "noch übrig")]),
+        Field("value_at_marker", "", "bool", visible_if=_is("profile"), rebuild=True,
+              tooltip="Wert neben der Positionsmarke statt oben"),
+        Field("alt_unit", "", "bool", visible_if=_is("profile"),
+              tooltip="Zusätzlich in der anderen Einheit (m und ft, km/h und mph)"),
+        Field("scope_window_s", "Zeitspanne", "number", lo=3, hi=600, step=1, decimals=0, suffix=" s", slider=True,
+              visible_if=_is("scope"), tooltip="Wie viele Sekunden vor dem aktuellen Moment der Graph zeigt"),
         Field("decimals", "Nachkommastellen", "choice",
               options=[(None, "Standard"), (0, "0"), (1, "1"), (2, "2")], visible_if=not_clock),
         Field("decimals", "Sekunden", "choice", options=[(None, "Standard"), (0, "nein"), (1, "ja")],
@@ -164,19 +219,30 @@ def value_sections() -> list[Section]:
                                              "alle Zwischenwerte. Bogen und Balken laufen immer flüssig."),
     ], summary=lambda c: c.label or "Standardbeschriftung")
     scale = Section("scale", "Skala & Zonen", [
-        Field("range", "Bereich", "custom", keys=("min_value", "max_value"), visible_if=_is("arc", "bar")),
-        Field("zones", "Farbzonen", "custom", keys=("zones",)),
+        Field("range", "Bereich", "custom", keys=("min_value", "max_value"), visible_if=_is("arc", "bar", "scope")),
+        Field("bar_style", "Form", "choice", visible_if=_is("bar"), rebuild=True,
+              options=[("fill", "Füllbalken"), ("marker", "Marke im Bereich")]),
+        Field("zones", "Farbzonen", "custom", keys=("zones",), visible_if=_is("text", "arc", "bar", "scope", "profile", "map")),
+        Field("zone_fill", "Zonen zeigen", "choice", visible_if=lambda c, _x: c.type == "bar" and bool(c.zones)
+              and c.bar_style == "fill", options=[("solid", "aktuelle Farbe"), ("segments", "alle Abschnitte")],
+              tooltip="aktuelle Farbe: ganzer Balken in der Farbe der aktuellen Zone\n"
+                      "alle Abschnitte: jede Zone in ihrer Farbe, wie eine Ampel"),
         Field("zones_color_text", "", "bool", visible_if=_is("text"), tooltip="Zahl in Zonenfarbe"),
         Field("sweep_deg", "Bogen", "number", lo=90, hi=360, step=10, decimals=0, suffix=" °", slider=True,
               visible_if=_is("arc")),
-        Field("show_needle", "", "bool", visible_if=_is("arc"), tooltip="Zeiger"),
-        Field("show_ticks", "", "bool", visible_if=_is("arc"), tooltip="Skala"),
+        Field("show_needle", "", "bool", visible_if=_is("arc"), tooltip="Zeiger", rebuild=True),
+        Field("needle_style", "Zeiger", "choice", visible_if=lambda c, _x: c.type == "arc" and c.show_needle,
+              options=[("line", "Strich"), ("pointer", "spitz")]),
+        Field("show_ticks", "", "bool", visible_if=_is("arc"), tooltip="Skala", rebuild=True),
+        Field("show_tick_labels", "", "bool", visible_if=lambda c, _x: c.type == "arc" and c.show_ticks,
+              tooltip="Zahlen an der Skala"),
         Field("orientation", "Ausrichtung", "choice", options=[("horizontal", "waagerecht"), ("vertical", "senkrecht")],
               visible_if=_is("bar")),
         Field("stroke", "Strichstärke", "number", lo=1, hi=30, step=0.5, suffix=" %", scale=0.01, slider=True,
-              visible_if=_is("arc", "bar", "map", "profile")),
+              visible_if=_is("arc", "bar", "map", "profile", "progress", "scope")),
     ], collapsed=True)
     route = Section("route", "Route", [
+        Field("position_marker", "Position", "choice", options=[("dot", "Punkt"), ("arrow", "Pfeil in Fahrtrichtung")]),
         Field("route_coloring", "Route einfärben", "choice", target="minimap",
               options=[("solid", "eine Farbe"), ("gradient", "nach Steigung")], rebuild=True),
     ], visible_if=_is("map"))
@@ -305,14 +371,17 @@ def sections_for(cfg: WidgetConfig) -> list[Section]:
     out = [content_section(), position_section()]
     if cfg.type == "minimap":
         out += minimap_sections()
+        out.append(type_section())
         out.append(style_section(colors=False, outline=False, badge=False))
     elif cfg.type == "climb":
         out += climb_sections()
-        out.append(style_section(numbers=False, outline=False, color_titles={
+        out.append(type_section())
+        out.append(style_section(outline=False, color_titles={
             "text_color": "Text", "label_color": "Linie/Details", "accent_color": "Position",
             "track_color": "Füllung (ohne Steigungsfarben)"}))
     else:
         out += value_sections()
+        out.append(type_section())
         out.append(style_section(fills=cfg.type != "text"))
     return out
 

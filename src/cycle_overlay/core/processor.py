@@ -439,11 +439,13 @@ def process(raw: RawTrack, config: ProcessingConfig | None = None) -> Telemetry:
         gradient = np.clip(_fill_both(gradient), -cfg.gradient_limit_pct, cfg.gradient_limit_pct)
         gradient[np.isnan(ele)] = np.nan
         gain = elevation_gain(ele, cfg.gain_hysteresis_m)
+        loss = elevation_gain(-ele, cfg.gain_hysteresis_m)  # Abstieg = Anstieg der gespiegelten Höhe
         vam_v = vam(grid, ele, cfg.vam_window_s)
     else:
         ele = np.full(grid.shape, np.nan)
         gradient = ele.copy()
         gain = ele.copy()
+        loss = ele.copy()
         vam_v = ele.copy()
         warnings.append("Die Datei enthält keine Höhendaten – Höhe, Steigung, Höhenmeter und VAM sind nicht verfügbar.")
 
@@ -482,6 +484,7 @@ def process(raw: RawTrack, config: ProcessingConfig | None = None) -> Telemetry:
             "elevation": ele,
             "gradient": gradient,
             "elevation_gain": gain,
+            "elevation_loss": loss,
             "vam": vam_v,
             "elapsed_time": grid.copy(),
             "moving_time": moving_time,
@@ -492,7 +495,7 @@ def process(raw: RawTrack, config: ProcessingConfig | None = None) -> Telemetry:
     for ch in ("speed", "distance", "elapsed_time", "moving_time", "lat", "lon"):
         available[ch] = True
     available["position"] = bool(raw.has_position and np.isfinite(lat).all() and np.ptp(lat) + np.ptp(lon) > 0)
-    for ch in ("elevation", "gradient", "elevation_gain", "vam"):
+    for ch in ("elevation", "gradient", "elevation_gain", "elevation_loss", "vam"):
         available[ch] = has_ele
 
     # --- Statistiken

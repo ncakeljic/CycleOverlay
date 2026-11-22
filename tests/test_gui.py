@@ -978,3 +978,68 @@ def test_update_check_up_to_date_and_errors(win, monkeypatch):
     win.settings.check_updates = False
     mgr2.auto_check()
     assert mgr2._check is None
+
+
+def test_type_gallery_and_apply_to_all(loaded, monkeypatch):
+    from cycle_overlay.rendering.typography import preset_of
+
+    w = loaded
+    w.c.select("heart_rate")
+    QApplication.processEvents()
+    ins = w.inspector
+    assert "type" in ins.sections and "style" in ins.sections
+    assert ins.type_buttons["classic"].isChecked()
+    ins.type_buttons["poster"].click()
+    assert wait_for(lambda: preset_of(w.c.model.widget("heart_rate").style) == "poster")
+    assert wait_for(lambda: ins.type_buttons["poster"].isChecked())  # nach dem Neuaufbau markiert
+    assert w.c.dirty
+    # Feineinstellung macht daraus einen eigenen Stil
+    ins._set_style("font_width", 0.8)
+    assert preset_of(w.c.model.widget("heart_rate").style) is None
+    ins._set_style("font_width", 9.0)  # ungültig -> abgelehnt, alter Wert bleibt
+    assert w.c.model.widget("heart_rate").style.font_width == pytest.approx(0.8)
+    # auf alle übertragen
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    ins._apply_all(("font_family", "font_width"), "die Schrift")
+    others = [x for x in w.c.model.project.layout.widgets if x.id != "heart_rate"]
+    assert others and all(x.style.font_family == "Anton" and x.style.font_width == pytest.approx(0.8) for x in others)
+
+
+def test_font_combo_lists_bundled_fonts_first(loaded):
+    from cycle_overlay.rendering.typography import BUNDLED_FAMILIES
+
+    w = loaded
+    w.c.select("heart_rate")
+    QApplication.processEvents()
+    seen = []
+    box = w.inspector._font_combo("Inter", seen.append)
+    assert [box.itemData(i) for i in range(len(BUNDLED_FAMILIES))] == list(BUNDLED_FAMILIES)
+    box.setCurrentIndex(box.findData("Fira Sans"))
+    assert seen[-1] == "Fira Sans"
+
+
+def test_add_widget_dialog_with_templates(loaded):
+    from cycle_overlay.gui.signal_panel import AddWidgetDialog
+
+    w = loaded
+    dlg = AddWidgetDialog(w.c.model.available_channels(), w)
+    key, ch = dlg.result_values()
+    assert key == "text" and ch == "speed"  # erste Vorlage, Vorschlag zuerst
+    dlg.select_template("needle")
+    assert dlg.title.text() == "Tacho mit Nadel"
+    dlg.select_template("map_arrow")
+    assert not dlg.channel_row.isVisibleTo(dlg)  # nur ein passendes Signal -> keine Auswahl nötig
+    dlg.select_template("progress")
+    assert dlg.channel.currentData() == "distance"
+    n = len(w.c.model.project.layout.widgets)
+    w.c.add_from_template("needle")
+    cfg = w.c.model.widget(w.c.selected)
+    assert len(w.c.model.project.layout.widgets) == n + 1
+    assert cfg.type == "arc" and cfg.show_needle and cfg.needle_style == "pointer"
+    # Inspector zeigt die neuen Optionen
+    QApplication.processEvents()
+    from cycle_overlay.gui.inspector_spec import visible_sections
+
+    keys = {f.key for _s, fs in visible_sections(cfg) for f in fs}
+    assert {"needle_style", "show_tick_labels"} <= keys
+    dlg.deleteLater()

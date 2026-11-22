@@ -29,12 +29,14 @@ from ..core.units import CHANNELS, format_duration, format_value
 from ..rendering.layout import MAP_CHANNEL
 from ..rendering.values import CLOCK_CHANNEL
 from .controller import Controller
+from .form_kit import hint_label
 
 GPX_FILTER = "Fahrten (*.gpx *.GPX *.fit *.FIT);;Alle Dateien (*)"
 VIDEO_FILTER = "Videos (*.mp4 *.MP4 *.mov *.MOV *.m4v *.mkv *.insv *.LRV);;Alle Dateien (*)"
 TYPE_TITLES = {"text": "Wert + Beschriftung", "arc": "Rundinstrument", "bar": "Balken",
                "minimap": "Minimap (Navi)", "map": "Streckenübersicht", "profile": "Profil (über Distanz)",
-               "climb": "Anstiegs-Vorschau"}
+               "climb": "Anstiegs-Vorschau", "progress": "Fortschritt (gefahren / gesamt)",
+               "gainloss": "Höhenmeter hoch und runter", "scope": "Scope (laufender Graph)"}
 STATUS_COLORS = {"ok": "#2e9e4f", "partial": "#d08a00", "outside": "#d03030"}
 
 
@@ -47,25 +49,103 @@ def channel_title(ch: str) -> str:
 
 
 class AddWidgetDialog(QDialog):
+    """Vorlagen nach Gruppen links, rechts Beschreibung und passendes Signal.
+
+    Doppelklick auf eine Vorlage fügt sie sofort hinzu. Vorlagen ohne passendes Signal in dieser
+    Fahrt sind ausgegraut (mit Hinweis, was fehlt).
+    """
+
     def __init__(self, channels: list[str], parent=None):
+        from ..rendering.templates import GROUPS, TEMPLATES, channels_for
+
         super().__init__(parent)
         self.setWindowTitle("Widget hinzufügen")
+        self.resize(640, 440)
+        self._available = channels
+        self._channels_for = channels_for
+        self._templates = TEMPLATES
+        self.list = QListWidget()
+        self.list.setMinimumWidth(250)
+        first = None
+        for group in GROUPS:
+            head = QListWidgetItem(group)
+            head.setFlags(Qt.ItemFlag.NoItemFlags)
+            f = head.font()
+            f.setBold(True)
+            head.setFont(f)
+            self.list.addItem(head)
+            for key, tpl in TEMPLATES.items():
+                if tpl.group != group:
+                    continue
+                item = QListWidgetItem("   " + tpl.title)
+                item.setData(Qt.ItemDataRole.UserRole, key)
+                if not channels_for(tpl, channels):
+                    item.setFlags(Qt.ItemFlag.NoItemFlags)
+                    item.setToolTip("Dafür fehlt in dieser Fahrt das passende Signal.")
+                elif first is None:
+                    first = item
+                self.list.addItem(item)
+        self.title = QLabel("")
+        self.title.setStyleSheet("font-weight:600; font-size:14px")
+        self.desc = QLabel("")
+        self.desc.setWordWrap(True)
         self.channel = QComboBox()
-        for ch in channels:
-            self.channel.addItem(channel_title(ch), ch)
-        self.wtype = QComboBox()
-        for key, title in TYPE_TITLES.items():
-            self.wtype.addItem(title, key)
-        form = QFormLayout(self)
-        form.addRow("Signal", self.channel)
-        form.addRow("Darstellung", self.wtype)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        form.addRow(buttons)
+        self.channel_row = QWidget()
+        cr = QFormLayout(self.channel_row)
+        cr.setContentsMargins(0, 8, 0, 0)
+        cr.addRow("Signal", self.channel)
+        right = QVBoxLayout()
+        right.addWidget(self.title)
+        right.addWidget(self.desc)
+        right.addWidget(self.channel_row)
+        right.addStretch(1)
+        right.addWidget(hint_label("Tipp: Doppelklick fügt die Vorlage direkt hinzu. Alles lässt sich danach "
+                                   "im Tab „Widget“ anpassen.", "#8a8a8a"))
+        body = QHBoxLayout()
+        body.addWidget(self.list, 1)
+        body.addLayout(right, 1)
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Hinzufügen")
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        lay = QVBoxLayout(self)
+        lay.addLayout(body, 1)
+        lay.addWidget(self.buttons)
+        self.list.currentItemChanged.connect(lambda cur, _prev: self._show(cur))
+        self.list.itemDoubleClicked.connect(lambda it: self.accept() if it.data(Qt.ItemDataRole.UserRole) else None)
+        if first is not None:
+            self.list.setCurrentItem(first)
+        else:
+            self._show(None)
 
-    def result_values(self) -> tuple[str, str]:
-        return self.channel.currentData(), self.wtype.currentData()
+    def _show(self, item) -> None:
+        key = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if not key:
+            self.title.setText("")
+            self.desc.setText("Links eine Vorlage wählen.")
+            self.channel_row.setVisible(False)
+            ok.setEnabled(False)
+            return
+        tpl = self._templates[key]
+        self.title.setText(tpl.title)
+        self.desc.setText(tpl.description)
+        self.channel.clear()
+        for ch in self._channels_for(tpl, self._available):
+            self.channel.addItem(channel_title(ch), ch)
+        self.channel_row.setVisible(self.channel.count() > 1)
+        ok.setEnabled(self.channel.count() > 0)
+
+    def select_template(self, key: str) -> None:
+        for k in range(self.list.count()):
+            if self.list.item(k).data(Qt.ItemDataRole.UserRole) == key:
+                self.list.setCurrentRow(k)
+                return
+
+    def result_values(self) -> tuple[str, str | None]:
+        """(Vorlage, Signal)."""
+        item = self.list.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole), self.channel.currentData()
 
 
 class SignalPanel(QWidget):
@@ -207,8 +287,9 @@ class SignalPanel(QWidget):
             return
         dlg = AddWidgetDialog(chans, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
-            ch, wt = dlg.result_values()
-            self.c.add_widget(ch, wt)
+            key, ch = dlg.result_values()
+            if key:
+                self.c.add_from_template(key, ch)
 
     def _on_units(self) -> None:
         if self._updating:
