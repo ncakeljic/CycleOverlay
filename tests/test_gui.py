@@ -1043,3 +1043,56 @@ def test_add_widget_dialog_with_templates(loaded):
     keys = {f.key for _s, fs in visible_sections(cfg) for f in fs}
     assert {"needle_style", "show_tick_labels"} <= keys
     dlg.deleteLater()
+
+
+def test_add_widget_dialog_shows_preview(loaded):
+    import numpy as np
+
+    from cycle_overlay.gui.signal_panel import AddWidgetDialog
+    from cycle_overlay.gui.widget_preview import PREVIEW_SIZE, preview_time, template_preview
+    from cycle_overlay.rendering.qt_support import image_to_rgba
+    from cycle_overlay.rendering.templates import TEMPLATES
+
+    w = loaded
+    m = w.c.model
+    t = preview_time(m, 0.0)
+    assert 0 < t < m.telemetry.duration
+    n = len(m.project.layout.widgets)
+    for key in TEMPLATES:
+        img = template_preview(m, key, None, t)
+        assert (img.width(), img.height()) == PREVIEW_SIZE
+        a = image_to_rgba(img).astype(int)
+        assert (np.abs(a[..., :3] - (58, 64, 74)).max(axis=2) > 40).sum() > 200, key  # es ist etwas zu sehen
+    assert len(m.project.layout.widgets) == n  # Vorschau fügt nichts hinzu
+    calls = []
+
+    def prev(key, ch):
+        calls.append((key, ch))
+        return template_preview(m, key, ch, t)
+
+    dlg = AddWidgetDialog(m.available_channels(), w, preview=prev)
+    assert calls and not dlg.preview.pixmap().isNull()
+    dlg.select_template("scope")
+    assert calls[-1][0] == "scope"
+    dlg.channel.setCurrentIndex(dlg.channel.findData("speed"))
+    assert calls[-1] == ("scope", "speed")
+    dlg.deleteLater()
+
+
+def test_preview_quality_changes_video_resolution(loaded, clip, monkeypatch):
+    w = loaded
+    monkeypatch.setattr(w.settings, "save", lambda *a, **k: None)
+    w.c.model.set_sync_options(timezone="Europe/Berlin")
+    w.c.open_video(clip)
+    assert wait_for(lambda: w.c.model.has_video)
+    v = w.c.model.video
+    w.opt_quality.setCurrentIndex(w.opt_quality.findData("full"))
+    assert w.c.preview_quality == "full" and w.settings.preview_quality == "full"
+    assert w.c.preview_frame_size() == (v.width - v.width % 2, v.height - v.height % 2)
+    w.opt_quality.setCurrentIndex(w.opt_quality.findData("quarter"))
+    assert w.c.preview_frame_size()[0] <= v.width // 4 + 1
+    assert wait_for(lambda: w.c.background is not None and w.c.background.shape[1] == w.c.preview_frame_size()[0])
+    assert "×" in w.quality_info.text()
+    w.opt_quality.setCurrentIndex(w.opt_quality.findData("auto"))
+    w.c.set_preview_target(400)
+    assert w.c.preview_frame_size()[0] == min(640, v.width - v.width % 2)

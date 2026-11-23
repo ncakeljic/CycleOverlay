@@ -84,8 +84,21 @@ class PreviewCanvas(QWidget):
             self._checker = img
         return self._checker
 
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e)
+        self._report_size()
+
+    def showEvent(self, e) -> None:
+        super().showEvent(e)
+        self._report_size()
+
+    def _report_size(self) -> None:
+        """Breite der Vorschau in echten Bildschirm-Pixeln melden (Retina: doppelt) – für „Automatisch“."""
+        self.c.set_preview_target(int(round(self.frame_rect().width() * self.devicePixelRatioF())))
+
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         p.fillRect(self.rect(), QColor(38, 38, 42))
         model = self.c.model
         r = self.frame_rect()
@@ -105,11 +118,15 @@ class PreviewCanvas(QWidget):
             p.restore()
 
         if model.ready:
-            tw, th = max(int(round(r.width())), 1), max(int(round(r.height())), 1)
+            # in echten Bildschirm-Pixeln rendern, sonst ist die Schrift auf Retina-Displays unscharf
+            dpr = max(self.devicePixelRatioF(), 1.0)
+            tw, th = max(int(round(r.width() * dpr)), 1), max(int(round(r.height() * dpr)), 1)
             try:
                 values = model.frame_values([self.c.track_time()])
                 renderer = CanvasRenderer(model.project.layout, values, tw, th)
-                p.drawImage(QPointF(r.x(), r.y()), renderer.render(0))
+                img = renderer.render(0)
+                img.setDevicePixelRatio(dpr)
+                p.drawImage(QPointF(r.x(), r.y()), img)
             except Exception as exc:  # noqa: BLE001 – Vorschau darf nie abstürzen
                 p.setPen(QColor(255, 120, 120))
                 p.drawText(r, Qt.AlignmentFlag.AlignCenter, f"Vorschau-Fehler: {exc}")

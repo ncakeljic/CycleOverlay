@@ -77,6 +77,8 @@ def platform_key() -> str:
         return "windows"
     if sys.platform == "darwin":
         return "macos"
+    if sys.platform.startswith("linux"):
+        return "linux"
     return "other"
 
 
@@ -89,7 +91,16 @@ def pick_asset(assets: list[dict], platform: str | None = None) -> dict | None:
         setup = [x for x in exes if "setup" in x[0].lower()]
         chosen = (setup or exes or [None])[0]
     elif platform == "macos":
-        chosen = next(((n, a) for n, a in named if n.lower().endswith((".dmg", ".pkg"))), None)
+        dmgs = [(n, a) for n, a in named if n.lower().endswith((".dmg", ".pkg"))]
+        # Apple Silicon und Intel getrennt gebaut: passende Architektur bevorzugen
+        arch = "arm64" if _machine() in ("arm64", "aarch64") else "x86_64"
+        fitting = [x for x in dmgs if arch in x[0].lower()]
+        chosen = (fitting or [x for x in dmgs if not any(a in x[0].lower() for a in ("arm64", "x86_64"))]
+                  or [None])[0]
+    elif platform == "linux":
+        debs = [(n, a) for n, a in named if n.lower().endswith(".deb")]
+        tars = [(n, a) for n, a in named if n.lower().endswith((".tar.gz", ".appimage"))]
+        chosen = (debs or tars or [None])[0]
     else:
         chosen = None
     return chosen[1] if chosen else None
@@ -189,11 +200,17 @@ def download(info: UpdateInfo, dest_dir: str | os.PathLike, *, progress: Callabl
     return target
 
 
+def _machine() -> str:
+    import platform
+
+    return platform.machine().lower()
+
+
 def can_self_update() -> bool:
-    """Nur die installierte App (Windows-Installer) kann sich selbst ersetzen."""
+    """Nur die installierte App kann sich (mit Hilfe des Installers) selbst ersetzen."""
     from ..app_paths import is_frozen
 
-    return is_frozen() and platform_key() in ("windows", "macos")
+    return is_frozen() and platform_key() in ("windows", "macos", "linux")
 
 
 def launch_installer(path: str | os.PathLike) -> None:
@@ -204,6 +221,8 @@ def launch_installer(path: str | os.PathLike) -> None:
         subprocess.Popen([str(path), "/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS", "/NORESTART"],
                          close_fds=True)
     elif platform_key() == "macos":
-        subprocess.Popen(["open", str(path)])
+        subprocess.Popen(["open", str(path)])  # öffnet das Disk-Image – App in „Programme“ ziehen
+    elif platform_key() == "linux":
+        subprocess.Popen(["xdg-open", str(path)])  # .deb öffnet die Software-Verwaltung
     else:
         raise UpdateError("Automatische Installation wird auf diesem System nicht unterstützt.")

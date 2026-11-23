@@ -1,8 +1,9 @@
 # Neue Version veröffentlichen:
 #   1. __version__ in src/cycle_overlay/__init__.py und CHANGELOG.md anpassen, committen, pushen
 #   2. git tag v1.8.0 && git push --tags
-# Dieser Ablauf baut dann den Windows-Installer und legt ein GitHub-Release mit dem
-# CHANGELOG-Abschnitt als Text an. Die installierten Apps finden das Update darüber.
+# Dieser Ablauf baut dann den Windows-Installer (.exe), das macOS-Disk-Image (.dmg, Apple Silicon)
+# und die Linux-Pakete (.deb, .tar.gz) und legt ein GitHub-Release mit dem CHANGELOG-Abschnitt als
+# Text an. Die installierten Apps finden das Update darüber.
 name: Release
 
 on:
@@ -47,17 +48,68 @@ jobs:
           name: installer-windows
           path: packaging/windows/Output/CycleOverlay-Setup-*.exe
 
+  macos:
+    runs-on: macos-14  # Apple Silicon (arm64)
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Tag passt zur Version im Quellcode
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python3 packaging/release_notes.py --check "${{ github.ref_name }}"
+
+      - name: uv und ffmpeg (für den Selbsttest)
+        run: brew install uv ffmpeg
+
+      - name: App und Disk-Image bauen
+        run: bash packaging/macos/build.sh
+
+      - name: Disk-Image als Artefakt
+        uses: actions/upload-artifact@v6
+        with:
+          name: installer-macos
+          path: dist/CycleOverlay-*-macOS-*.dmg
+
+  linux:
+    runs-on: ubuntu-22.04  # älteres glibc -> läuft auch auf älteren Distributionen
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Tag passt zur Version im Quellcode
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python3 packaging/release_notes.py --check "${{ github.ref_name }}"
+
+      - name: Systempakete (ffmpeg, Qt-Bibliotheken für den Selbsttest)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libfontconfig1 libdbus-1-3
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Pakete bauen
+        run: bash packaging/linux/build.sh
+
+      - name: Pakete als Artefakt
+        uses: actions/upload-artifact@v6
+        with:
+          name: installer-linux
+          path: |
+            dist/cycleoverlay_*.deb
+            dist/CycleOverlay-*-linux-*.tar.gz
+
   release:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: windows
+    needs: [windows, macos, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/download-artifact@v7
         with:
-          name: installer-windows
+          pattern: installer-*
           path: out
+          merge-multiple: true
 
       - name: Release-Text aus CHANGELOG.md
         run: python3 packaging/release_notes.py "${{ github.ref_name }}" > notes.md
@@ -67,4 +119,8 @@ jobs:
         with:
           name: CycleOverlay ${{ github.ref_name }}
           body_path: notes.md
-          files: out/*.exe
+          files: |
+            out/*.exe
+            out/*.dmg
+            out/*.deb
+            out/*.tar.gz

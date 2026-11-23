@@ -163,14 +163,19 @@ class ClimbPreviewWidget(OverlayWidget):
         if cs.show_info:
             cap = 0.13 * h
             f_title = font_for_cap(st, cap, WEIGHT_VALUE)
-            f_detail = font_for_cap(st, cap * 0.85, WEIGHT_LABEL)
             base = y + pad + cap
+            # Titel und Details müssen nebeneinander zwischen left und right passen
+            while text_width(f_title, title) > (right - left) * 0.6 and cap > 2:
+                cap *= 0.92
+                f_title = font_for_cap(st, cap, WEIGHT_VALUE)
             draw_text(p, title, f_title, left, base, st.text_color if climb else st.label_color, st)
             if detail:
                 tx = left + text_width(f_title, title) + 0.05 * h
                 maxw = right - tx
-                fd = f_detail
-                tw = text_width(fd, detail)
-                if tw > maxw > 0:
-                    fd = font_for_cap(st, cap * 0.85 * maxw / tw, WEIGHT_LABEL)
-                draw_text(p, detail, fd, tx, base, st.label_color, st)
+                dcap = cap * 0.85
+                fd = font_for_cap(st, dcap, WEIGHT_LABEL)
+                while text_width(fd, detail) > maxw and dcap > 2:
+                    dcap *= 0.93
+                    fd = font_for_cap(st, dcap, WEIGHT_LABEL)
+                if maxw > 0:
+                    draw_text(p, detail, fd, tx, base, st.label_color, st)

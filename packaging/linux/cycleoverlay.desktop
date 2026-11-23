@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=CycleOverlay
+GenericName=Telemetrie-Overlay
+Comment=Daten aus GPX/FIT als Overlay über Videos legen
+Exec=/opt/cycleoverlay/CycleOverlay %F
+Icon=cycleoverlay
+Terminal=false
+Categories=AudioVideo;Video;
+MimeType=application/x-cycleoverlay-project;
+StartupWMClass=CycleOverlay

@@ -19,7 +19,7 @@ from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPainterPat
 from ..grade import grade_class, grade_color, lowest_reference, smooth_grade
 from ..minimap_geometry import ROUTE_FADE_LEVELS, nice_scale, route_fade_levels, segment_levels, segment_runs
 from ..minimap_theme import THEMES
-from ..qt_support import WEIGHT_LABEL, WEIGHT_VALUE, font_for_cap, qcolor, text_width
+from ..qt_support import WEIGHT_LABEL, WEIGHT_VALUE, draw_plain_text, font_for_cap, qcolor, text_width
 from .base import OverlayWidget
 
 #: Breite einer Nebenstraße = Sichtweite / ROAD_DIV (bleibt so bei jedem Zoom gleich breit)
@@ -103,20 +103,19 @@ class MinimapWidget(OverlayWidget):
         self._draw_arrow(p, cam, i, theme, size)
         if mm.grade_badge and v.tel.available.get("gradient"):
             self._draw_grade_badge(p, cam, i, theme, size)
+        # Kompass wandert am Rand mit der Nordrichtung: Maßstab und Quellenangabe weichen ihm aus
+        compass = self._compass_pos(cam, sr, size) if mm.show_compass else None
+        bottom_blocked = compass is not None and compass[1] > sr.center().y() + sr.height() * 0.2 \
+            and abs(compass[0] - sr.center().x()) < sr.width() * 0.35
         if mm.show_scale and cam.tilt_deg == 0:
-            self._draw_scale(p, cam, sr, theme, size)
+            self._draw_scale(p, cam, sr, theme, size, at_top=bottom_blocked)
         if drew_osm and mm.show_attribution:
-            f = font_for_cap(cfg.style, size * 0.03, WEIGHT_LABEL)
-            txt = idx.data.attribution if idx is not None else ""
-            c = qcolor(theme.text)
-            c.setAlpha(170)
-            p.setFont(f)
-            p.setPen(c)
-            p.drawText(QPointF(sr.center().x() - text_width(f, txt) / 2, sr.bottom() - size * (0.05 if mm.shape == "circle" else 0.03)), txt)
+            self._draw_attribution(p, idx.data.attribution if idx is not None else "", sr, theme, size,
+                                   at_top=bottom_blocked)
         p.restore()
 
-        if mm.show_compass:
-            self._draw_compass(p, cam, sr, theme, size)
+        if compass is not None:
+            self._draw_compass(p, compass, theme, size)
         p.setBrush(Qt.BrushStyle.NoBrush)
         p.setPen(_pen(theme.border, max(size * 0.012, 1.0)))
         p.drawPath(shape)
@@ -317,9 +316,7 @@ class MinimapWidget(OverlayWidget):
             p.drawPolygon(QPolygonF([QPointF(tx, ty - tri / 2), QPointF(tx + tri, ty - tri / 2), QPointF(tx + tri / 2, ty + tri / 2)]))
         else:
             p.drawRect(QRectF(tx, ty - tri * 0.12, tri, tri * 0.24))
-        p.setFont(f)
-        p.setPen(qcolor(theme.text))
-        p.drawText(QPointF(tx + tri + cap * 0.35, ty + cap / 2), txt)
+        draw_plain_text(p, txt, f, tx + tri + cap * 0.35, ty + cap / 2, qcolor(theme.text))
 
     def _draw_arrow(self, p: QPainter, cam, i: int, theme, size: float) -> None:
         mm = self.cfg.minimap
@@ -357,27 +354,56 @@ class MinimapWidget(OverlayWidget):
             p.drawPolygon(poly)
         p.restore()
 
-    def _draw_compass(self, p: QPainter, cam, sr: QRectF, theme, size: float) -> None:
+    def _compass_pos(self, cam, sr: QRectF, size: float) -> tuple[float, float, float]:
+        """(x, y, Radius) des Kompasses: am Rand in Nordrichtung."""
         nx, ny = cam.north_vector()
         r = size * 0.075
+        inset = r * 1.15  # ganz innerhalb der Karte, damit „N“ am Bildrand nicht abgeschnitten wird
         if self.cfg.minimap.shape == "circle":
-            dist = size / 2 - r * 0.2
-            cx, cy = sr.center().x() + nx * dist, sr.center().y() + ny * dist
-        else:  # am Rand des Rechtecks entlang der Nordrichtung
-            cx0, cy0 = sr.center().x(), sr.center().y()
-            tx = (sr.width() / 2 - r * 0.2) / abs(nx) if abs(nx) > 1e-6 else math.inf
-            ty = (sr.height() / 2 - r * 0.2) / abs(ny) if abs(ny) > 1e-6 else math.inf
-            d = min(tx, ty)
-            cx, cy = cx0 + nx * d, cy0 + ny * d
+            dist = size / 2 - inset
+            return sr.center().x() + nx * dist, sr.center().y() + ny * dist, r
+        cx0, cy0 = sr.center().x(), sr.center().y()
+        tx = (sr.width() / 2 - inset) / abs(nx) if abs(nx) > 1e-6 else math.inf
+        ty = (sr.height() / 2 - inset) / abs(ny) if abs(ny) > 1e-6 else math.inf
+        d = min(tx, ty)
+        return cx0 + nx * d, cy0 + ny * d, r
+
+    def _draw_compass(self, p: QPainter, pos: tuple[float, float, float], theme, size: float) -> None:
+        cx, cy, r = pos
         p.setPen(_pen(theme.border, max(size * 0.008, 1.0)))
         p.setBrush(QBrush(qcolor(theme.background)))
         p.drawEllipse(QPointF(cx, cy), r, r)
-        f = font_for_cap(self.cfg.style, r * 0.9, WEIGHT_VALUE)
-        p.setFont(f)
-        p.setPen(qcolor(theme.text))
-        p.drawText(QPointF(cx - text_width(f, "N") / 2, cy + r * 0.45), "N")
+        f = font_for_cap(self.cfg.style, r * 0.9, WEIGHT_VALUE, scaled=False)
+        draw_plain_text(p, "N", f, cx - text_width(f, "N") / 2, cy + r * 0.45, qcolor(theme.text))
 
-    def _draw_scale(self, p: QPainter, cam, sr: QRectF, theme, size: float) -> None:
+    def _chord(self, sr: QRectF, y: float) -> float:
+        """Nutzbare Breite auf Höhe y (beim Kreis die Sehne, sonst die Breite)."""
+        if self.cfg.minimap.shape != "circle":
+            return sr.width()
+        r = min(sr.width(), sr.height()) / 2
+        dy = abs(y - sr.center().y())
+        return 2 * math.sqrt(max(r * r - dy * dy, 0.0))
+
+    def _draw_attribution(self, p: QPainter, txt: str, sr: QRectF, theme, size: float, at_top: bool) -> None:
+        """Quellenangabe (Pflicht bei OSM-Daten) – verkleinert, bis sie in die Form passt."""
+        if not txt:
+            return
+        circle = self.cfg.minimap.shape == "circle"
+        cap = size * 0.03
+        off = size * (0.05 if circle else 0.03)
+        base = sr.top() + off + cap if at_top else sr.bottom() - off
+        f = font_for_cap(self.cfg.style, cap, WEIGHT_LABEL, scaled=False)
+        avail = self._chord(sr, base - cap if not at_top else base) * 0.92
+        w = text_width(f, txt)
+        if w > avail > 0:
+            cap *= avail / w
+            f = font_for_cap(self.cfg.style, cap, WEIGHT_LABEL, scaled=False)
+            w = text_width(f, txt)
+        c = qcolor(theme.text)
+        c.setAlpha(170)
+        draw_plain_text(p, txt, f, sr.center().x() - w / 2, base, c)
+
+    def _draw_scale(self, p: QPainter, cam, sr: QRectF, theme, size: float, at_top: bool = False) -> None:
         mpp = cam.meters_per_pixel()
         imperial = self.values.units == "imperial"
         target_m = sr.width() * 0.28 * mpp
@@ -389,12 +415,12 @@ class MinimapWidget(OverlayWidget):
             label = f"{meters / 1000:g} km" if meters >= 1000 else f"{meters:g} m"
         px = meters / mpp
         x0 = sr.center().x() - px / 2
-        y0 = sr.bottom() - size * (0.14 if self.cfg.minimap.shape == "circle" else 0.07)
+        off = size * (0.14 if self.cfg.minimap.shape == "circle" else 0.07)
+        y0 = sr.top() + off + size * 0.05 if at_top else sr.bottom() - off
         p.setPen(_pen(theme.text, max(size * 0.01, 1.0)))
         p.drawLine(QPointF(x0, y0), QPointF(x0 + px, y0))
         for xx in (x0, x0 + px):
             p.drawLine(QPointF(xx, y0 - size * 0.015), QPointF(xx, y0 + size * 0.015))
-        f = font_for_cap(self.cfg.style, size * 0.03, WEIGHT_LABEL)
-        p.setFont(f)
-        p.setPen(qcolor(theme.text))
-        p.drawText(QPointF(sr.center().x() - text_width(f, label) / 2, y0 - size * 0.025), label)
+        f = font_for_cap(self.cfg.style, size * 0.03, WEIGHT_LABEL, scaled=False)
+        draw_plain_text(p, label, f, sr.center().x() - text_width(f, label) / 2, y0 - size * 0.025,
+                        qcolor(theme.text))

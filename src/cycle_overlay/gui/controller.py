@@ -26,7 +26,7 @@ from ..core.video_motion import (
     suggest_offsets,
     track_turn_rate,
 )
-from ..core.video_frames import VideoFrameSource, VideoStream, preview_size
+from ..core.video_frames import PREVIEW_QUALITIES, VideoFrameSource, VideoStream, preview_size_for
 
 log = logging.getLogger(__name__)
 
@@ -161,6 +161,9 @@ class Controller(QObject):
         self.selected = ""
         self.dirty = False
         self.background: np.ndarray | None = None  # aktuelles Videobild (RGB)
+        #: Schärfe des Videobilds in der Vorschau und Breite der Vorschau in Bildschirm-Pixeln
+        self.preview_quality = "auto"
+        self.preview_target_width = 960
         self._tasks: list[_Task] = []
         self._frames: VideoFrameSource | None = None
         self._loader = _FrameLoader(self)
@@ -487,13 +490,49 @@ class Controller(QObject):
     def _setup_frames(self) -> None:
         self._start_analysis()
         self.background = None
+        self._make_frame_source()
+
+    def _make_frame_source(self) -> None:
         if self.model.has_video:
             v = self.model.video
-            w, h = preview_size(v.width, v.height)
+            w, h = preview_size_for(v.width, v.height, self.preview_quality, self.preview_target_width)
             self._frames = VideoFrameSource(v.path, w, h, v.fps)
         else:
             self._frames = None
         self._loader.set_source(self._frames)
+
+    def preview_frame_size(self) -> tuple[int, int] | None:
+        """Aktuelle Größe der Vorschaubilder (None ohne Video)."""
+        return (self._frames.width, self._frames.height) if self._frames is not None else None
+
+    def set_preview_quality(self, quality: str) -> None:
+        """Schärfe des Videobilds: auto/full/half/quarter (wie die Wiedergabeauflösung in Premiere)."""
+        if quality not in PREVIEW_QUALITIES:
+            raise ValueError(f"Unbekannte Vorschau-Qualität: {quality!r}")
+        if quality != self.preview_quality:
+            self.preview_quality = quality
+            self._refresh_frame_size()
+
+    def set_preview_target(self, width_px: int) -> None:
+        """Breite der Vorschau auf dem Bildschirm in echten Pixeln (für „Automatisch“)."""
+        self.preview_target_width = max(int(width_px), 1)
+        if self.preview_quality == "auto":
+            self._refresh_frame_size()
+
+    def _refresh_frame_size(self) -> None:
+        if not self.model.has_video:
+            return
+        v = self.model.video
+        if preview_size_for(v.width, v.height, self.preview_quality, self.preview_target_width) == \
+                self.preview_frame_size():
+            return
+        was_playing = self.is_playing
+        if was_playing:
+            self.stop()
+        self._make_frame_source()
+        self._request_background()
+        if was_playing:
+            self.play()
 
     def _request_background(self) -> None:
         if self._frames is not None:

@@ -103,3 +103,20 @@ def test_no_asset_no_download(tmp_path):
 def test_source_checkout_cannot_self_update():
     assert not up.can_self_update()  # Tests laufen nie als gebündelte App
     assert up.USER_AGENT.endswith("(Update-Pruefung)") and __version__ in up.USER_AGENT
+
+
+def test_pick_asset_macos_arch_and_linux(monkeypatch):
+    assets = [
+        {"name": "CycleOverlay-Setup-9.1.0.exe", "browser_download_url": "u1"},
+        {"name": "CycleOverlay-9.1.0-macOS-arm64.dmg", "browser_download_url": "u2"},
+        {"name": "CycleOverlay-9.1.0-macOS-x86_64.dmg", "browser_download_url": "u3"},
+        {"name": "cycleoverlay_9.1.0_amd64.deb", "browser_download_url": "u4"},
+        {"name": "CycleOverlay-9.1.0-linux-x86_64.tar.gz", "browser_download_url": "u5"},
+    ]
+    monkeypatch.setattr(up, "_machine", lambda: "arm64")
+    assert up.pick_asset(assets, "macos")["browser_download_url"] == "u2"
+    monkeypatch.setattr(up, "_machine", lambda: "x86_64")
+    assert up.pick_asset(assets, "macos")["browser_download_url"] == "u3"
+    assert up.pick_asset(assets, "linux")["browser_download_url"] == "u4"
+    assert up.pick_asset(assets[4:], "linux")["browser_download_url"] == "u5"
+    assert up.pick_asset(assets[:1], "macos") is None

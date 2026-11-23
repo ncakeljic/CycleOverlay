@@ -2,6 +2,7 @@
 
     python packaging/release_notes.py 1.8.0 > notes.md
     python packaging/release_notes.py --check v1.8.0   # Tag passt zu __version__?
+    python packaging/release_notes.py --version         # Version aus dem Quellcode ausgeben
 """
 
 from __future__ import annotations
@@ -40,6 +41,9 @@ def section(version: str, changelog: str | None = None) -> str:
 
 
 def main(argv: list[str]) -> int:
+    if argv == ["--version"]:
+        print(source_version())
+        return 0
     if len(argv) == 2 and argv[0] == "--check":
         tag, ver = argv[1].lstrip("v"), source_version()
         if tag != ver:

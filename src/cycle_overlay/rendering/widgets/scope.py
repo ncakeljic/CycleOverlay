@@ -14,11 +14,9 @@ from ..qt_support import (
     WEIGHT_LABEL,
     WEIGHT_UNIT,
     WEIGHT_VALUE,
-    draw_text,
-    font_for_cap,
+    draw_text_row,
     qcolor,
     round_pen,
-    text_width,
 )
 from .base import OverlayWidget
 
@@ -93,16 +91,8 @@ class ScopeWidget(OverlayWidget):
 
         if show_text:
             number, unit = v.text(cfg, i)
-            label = v.label(cfg)
-            f_label = font_for_cap(st, cap * 0.75, WEIGHT_LABEL)
-            f_value = font_for_cap(st, cap, WEIGHT_VALUE)
-            f_unit = font_for_cap(st, cap * 0.7, WEIGHT_UNIT)
-            base = y + pad + cap
-            cx = left
-            if label:
-                draw_text(p, label, f_label, cx, base, st.label_color, st)
-                cx += text_width(f_label, label) + 0.05 * h
-            draw_text(p, number, f_value, cx, base, v.text_color(cfg, i), st)
-            if unit:
-                draw_text(p, unit, f_unit, cx + text_width(f_value, number) + 0.03 * h, base, st.label_color, st)
+            parts = [(v.label(cfg), cap * 0.75, WEIGHT_LABEL, st.label_color, 0.0),
+                     (number, cap, WEIGHT_VALUE, v.text_color(cfg, i), 0.05 * h),
+                     (unit, cap * 0.7, WEIGHT_UNIT, st.label_color, 0.03 * h)]
+            draw_text_row(p, parts, left, y + pad + cap, right - left, st, max_cap=cap)
 

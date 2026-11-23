@@ -666,6 +666,12 @@ class ProjectModel:
         return next((w for w in self.project.layout.widgets if w.id == wid), None)
 
     def add_widget(self, channel: str, wtype: str = "text") -> WidgetConfig:
+        cfg = self.new_widget(channel, wtype)
+        self.project.layout.widgets.append(cfg)
+        return cfg
+
+    def new_widget(self, channel: str, wtype: str = "text") -> WidgetConfig:
+        """Neues Widget mit Standardwerten und eindeutiger ID – noch nicht im Layout."""
         # Streckenkarte und Signal "position" gehören zusammen
         if wtype in ("map", "minimap") or channel == MAP_CHANNEL:
             wtype, channel = (wtype if wtype in ("map", "minimap") else "minimap"), MAP_CHANNEL
@@ -689,11 +695,16 @@ class ProjectModel:
             cfg.label_position = "top" if wtype == "profile" else "none"
             cfg.update_rate_hz = 2.0
         cfg.validate()
-        self.project.layout.widgets.append(cfg)
         return cfg
 
     def add_from_template(self, key: str, channel: str | None = None) -> WidgetConfig:
         """Widget aus einer Vorlage (``rendering.templates``) anlegen – mit deren Einstellungen."""
+        cfg = self.widget_from_template(key, channel)
+        self.project.layout.widgets.append(cfg)
+        return cfg
+
+    def widget_from_template(self, key: str, channel: str | None = None) -> WidgetConfig:
+        """Widget aus einer Vorlage bauen, ohne es hinzuzufügen (auch für die Vorschau im Dialog)."""
         from ..rendering.templates import TEMPLATES, channels_for, even_zones
 
         tpl = TEMPLATES[key]
@@ -704,21 +715,17 @@ class ProjectModel:
             channel = options[0]
         if not tpl.allows(channel):
             raise ValueError(f"„{tpl.title}“ passt nicht zum Signal {channel!r}.")
-        cfg = self.add_widget(channel, tpl.wtype)
-        try:
-            for k, val in tpl.cfg.items():
-                setattr(cfg, k, val)
-            for k, val in tpl.style.items():
-                setattr(cfg.style, k, val)
-            if tpl.size:
-                cfg.size = tpl.size
-            if tpl.auto_zones and self.telemetry is not None:
-                lo, hi = self.frame_values([0.0]).range(cfg)
-                cfg.zones = [Zone(v, c) for v, c in even_zones(lo, hi)]
-            cfg.validate()
-        except Exception:
-            self.remove_widget(cfg.id)
-            raise
+        cfg = self.new_widget(channel, tpl.wtype)
+        for k, val in tpl.cfg.items():
+            setattr(cfg, k, val)
+        for k, val in tpl.style.items():
+            setattr(cfg.style, k, val)
+        if tpl.size:
+            cfg.size = tpl.size
+        if tpl.auto_zones and self.telemetry is not None:
+            lo, hi = self.frame_values([0.0]).range(cfg)
+            cfg.zones = [Zone(v, c) for v, c in even_zones(lo, hi)]
+        cfg.validate()
         return cfg
 
     def remove_widget(self, wid: str) -> None:

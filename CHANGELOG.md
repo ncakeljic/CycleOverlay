@@ -4,6 +4,47 @@ Versionen nach dem Schema **MAJOR.MINOR.PATCH**: PATCH = Fehlerbehebungen, MINOR
 Funktionen, MAJOR = inkompatible Änderungen (z. B. am Projektformat). Die laufende Version
 steht im Fenstertitel, unter „Hilfe → Über“ und bei `cycle-overlay --version`.
 
+## Unveröffentlicht
+
+### Neu
+- **Installer für macOS und Linux**: macOS-App als Disk-Image (`.dmg`, Apple Silicon), Linux als
+  Debian/Ubuntu-Paket (`.deb`, mit Menüeintrag und ffmpeg als Abhängigkeit) und als `.tar.gz`.
+  GitHub Actions baut sie zusammen mit dem Windows-Installer bei jedem Release; die Update-Prüfung
+  wählt automatisch das passende Paket.
+- **Vorschau-Qualität** (oberhalb der Vorschau, wie die Wiedergabeauflösung in Premiere):
+  Automatisch (so scharf wie das Vorschaufenster, auf Retina doppelt), Voll, 1/2, 1/4. Daneben
+  steht die aktuelle Auflösung des Videobilds. Die Einstellung wird gespeichert.
+- Anzeigen in der Vorschau werden auf Retina-Displays in voller Auflösung gezeichnet und das
+  Videobild wird beim Skalieren geglättet (vorher unscharf/pixelig).
+- macOS: Doppelklick auf eine `.cyov`-Datei öffnet sie in CycleOverlay.
+
+### Behoben
+- **Überlappende Texte** in den Anzeigen, systematisch geprüft (jede Vorlage in mehreren Größen,
+  allen Schriftstilen, mit extremen Schrifteinstellungen, Englisch/imperial):
+  - Tacho mit Nadel: Zahl, Einheit und Beschriftung lagen übereinander und auf den Skalenzahlen.
+    Der Text in der Mitte wird jetzt als Block gesetzt und verkleinert, bis er nichts berührt;
+    beim geschlossenen Kreis (360°) fallen die erste und letzte Skalenzahl nicht mehr aufeinander.
+  - Kursive Schrift: Die letzte Ziffer ragte in die Einheit.
+  - Balken, Höhenprofil und Scope: Beschriftung, Zahl und Einheit werden bei Platzmangel gemeinsam
+    kleiner statt sich zu überlappen oder über den Rand zu laufen.
+  - Wert + Beschriftung: lange Beschriftung (z. B. GESAMTZEIT) in schmalen Widgets ragte heraus.
+  - Anstiegs-Vorschau: Details liefen über den rechten Rand.
+  - Minimap: Kompass, Maßstab und Quellenangabe weichen sich aus; „N“ wird am Bildrand nicht mehr
+    abgeschnitten; die Quellenangabe passt in die runde Karte. Texte der Minimap folgen der
+    eingestellten Schriftbreite.
+- Widget-Vorschau zeigte an Pausenstellen „0.0“ – sie nimmt jetzt eine Stelle, an der man fährt.
+- Export-Bereich: Die Felder für In/Out schnitten die Zeit ab (macOS).
+- Fahrtinfo zeigte „2463 m hm“ – jetzt „▲ 2463 m“.
+- Fenstertitel: Ungespeicherte Änderungen werden wie bei macOS üblich angezeigt.
+- Neuer Test `test_text_layout.py` prüft alle Vorlagen automatisch auf Text-Kollisionen.
+
+## 1.11.0
+
+### Neu
+- **Vorschau in „Widget hinzufügen“**: Zu jeder Vorlage erscheint rechts ein Vorschaubild mit echten
+  Werten deiner Fahrt – an der aktuellen Stelle (am Anfang stattdessen mitten in der Fahrt) und, wenn
+  ein Video geladen ist, über dem Videobild. Ein anderes Signal gewählt -> die Vorschau zeigt es sofort.
+
 ## 1.10.1
 
 ### Behoben

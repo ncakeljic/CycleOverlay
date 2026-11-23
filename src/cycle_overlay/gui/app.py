@@ -39,6 +39,24 @@ def install_excepthook(log_path, parent=None) -> None:
     sys.excepthook = hook
 
 
+def install_file_open_handler(app, win):
+    """macOS: Doppelklick auf eine .cyov-Datei im Finder kommt als FileOpen-Ereignis, nicht als Argument."""
+    from PySide6.QtCore import QEvent, QObject
+
+    class _Filter(QObject):
+        def eventFilter(self, obj, event):  # noqa: N802 – Qt-Name
+            if event.type() == QEvent.Type.FileOpen:
+                path = event.file()
+                if path:
+                    win.open_paths([path])
+                return True
+            return False
+
+    f = _Filter(app)
+    app.installEventFilter(f)
+    return f
+
+
 def run_gui(paths: list[str] | None = None) -> int:
     try:
         from PySide6.QtWidgets import QApplication
@@ -68,6 +86,7 @@ def run_gui(paths: list[str] | None = None) -> int:
         app.setWindowIcon(QIcon(str(icon)))
     win = MainWindow()
     install_excepthook(log_path, win)
+    install_file_open_handler(app, win)
     win.show()
     win.check_ffmpeg(silent_if_ok=True)
     if paths:

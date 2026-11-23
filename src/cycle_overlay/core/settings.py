@@ -31,6 +31,8 @@ class AppSettings:
     last_update_check: float = 0.0
     #: Version, die der Nutzer mit „Diese Version überspringen“ ausgeblendet hat
     skipped_version: str | None = None
+    #: Schärfe des Videobilds in der Vorschau: "auto" | "full" | "half" | "quarter"
+    preview_quality: str = "auto"
 
     @classmethod
     def load(cls, path: Path | None = None) -> "AppSettings":

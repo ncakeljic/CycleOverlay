@@ -1,0 +1,10 @@
+CycleOverlay installieren
+=========================
+
+1. „CycleOverlay“ auf den Ordner „Programme“ ziehen.
+2. Beim ersten Start: Rechtsklick auf CycleOverlay → „Öffnen“ → „Öffnen“.
+   (Die App ist nicht bei Apple registriert; danach startet sie normal per Doppelklick.)
+   Falls macOS „beschädigt“ meldet: im Terminal
+       xattr -dr com.apple.quarantine /Applications/CycleOverlay.app
+3. CycleOverlay braucht ffmpeg. Falls es fehlt, meldet die App das beim Start:
+       brew install ffmpeg        (Homebrew: https://brew.sh)

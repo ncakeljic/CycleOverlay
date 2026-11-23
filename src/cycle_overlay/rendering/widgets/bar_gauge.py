@@ -115,14 +115,26 @@ class BarGaugeWidget(OverlayWidget):
         label = v.label(cfg) if cfg.label_position != "none" else ""
 
         value_cap = 0.30 * h
-        f_value = font_for_cap(st, value_cap, WEIGHT_VALUE)
-        f_unit = font_for_cap(st, 0.15 * h, WEIGHT_UNIT)
-        f_label = font_for_cap(st, 0.16 * h, WEIGHT_LABEL)
         base = y + pad + value_cap
-        gap = 0.05 * h
+        avail = w - 2 * pad
 
-        wu = text_width(f_unit, unit)
-        wv = text_width(f_value, number)
+        def fonts(k: float):
+            uc = min(0.15 * h * st.unit_scale, value_cap) * k
+            lc = min(0.16 * h * st.label_scale, value_cap) * k
+            return (font_for_cap(st, value_cap * k, WEIGHT_VALUE), font_for_cap(st, uc, WEIGHT_UNIT, scaled=False),
+                    font_for_cap(st, lc, WEIGHT_LABEL, scaled=False))
+
+        # Beschriftung links, Zahl und Einheit rechts – alles in einer Zeile, sonst gemeinsam kleiner
+        k = 1.0
+        while True:
+            f_value, f_unit, f_label = fonts(k)
+            gap = 0.05 * h * k
+            wu, wv = text_width(f_unit, unit), text_width(f_value, number)
+            wl = text_width(f_label, label)
+            need = wv + (gap + wu if unit else 0.0) + (wl + 2 * gap if label else 0.0)
+            if need <= avail or k < 0.25:
+                break
+            k *= 0.92
         right = x + w - pad
         if unit:
             draw_text(p, unit, f_unit, right - wu, base, st.label_color, st)

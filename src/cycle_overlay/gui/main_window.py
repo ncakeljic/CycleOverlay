@@ -9,6 +9,7 @@ from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QInputDialog,
@@ -25,6 +26,7 @@ from .. import APP_NAME, __version__
 from ..core.presets import list_presets, load_preset, save_user_preset
 from ..core.project import PROJECT_SUFFIX
 from ..core.settings import AppSettings
+from ..core.video_frames import PREVIEW_QUALITIES
 from ..export.ffmpeg_locator import configure as configure_ffmpeg, install_hint, locate
 from ..rendering.i18n import LANGUAGES
 from ..rendering.layout import Layout
@@ -75,12 +77,32 @@ class MainWindow(QMainWindow):
         self.opt_snap = QCheckBox("Raster (Alt = frei)")
         self.opt_snap.setChecked(True)
         self.opt_snap.toggled.connect(lambda v: setattr(self.canvas, "snap", v))
+        # Schärfe des Videobilds – wie die Wiedergabeauflösung in Premiere
+        self.opt_quality = QComboBox()
+        for key, title in PREVIEW_QUALITIES.items():
+            self.opt_quality.addItem(title, key)
+        self.opt_quality.setToolTip(
+            "Schärfe des Videobilds in der Vorschau\n"
+            "Automatisch: so scharf wie das Vorschaufenster groß ist (auf Retina-Displays doppelt)\n"
+            "Voll: Originalauflösung des Videos – am schärfsten, Abspielen kann bei 4K ruckeln\n"
+            "1/2, 1/4: kleiner und schneller, gut für langsame Rechner oder Netzlaufwerke\n"
+            "Der Export ist davon nicht betroffen.")
+        self.opt_quality.currentIndexChanged.connect(self._set_preview_quality)
+        self.quality_info = QLabel("")
+        self.quality_info.setStyleSheet("color:#8a8a8a")
+        c.backgroundChanged.connect(self._update_quality_info)
         opts = QHBoxLayout()
         opts.addWidget(QLabel("Vorschau:"))
         opts.addWidget(self.opt_video)
         opts.addWidget(self.opt_safe)
         opts.addWidget(self.opt_snap)
         opts.addStretch(1)
+        opts.addWidget(QLabel("Qualität:"))
+        opts.addWidget(self.opt_quality)
+        opts.addWidget(self.quality_info)
+        q = self.settings.preview_quality if self.settings.preview_quality in PREVIEW_QUALITIES else "auto"
+        self.opt_quality.setCurrentIndex(self.opt_quality.findData(q))
+        self.c.preview_quality = q
         center = QWidget()
         cl = QVBoxLayout(center)
         cl.setContentsMargins(0, 0, 0, 0)
@@ -322,7 +344,27 @@ class MainWindow(QMainWindow):
     def _update_title(self) -> None:
         name = self.c.project_path.stem if self.c.project_path else (
             Path(self.c.model.project.gpx_path).stem if self.c.model.project.gpx_path else "Neues Projekt")
-        self.setWindowTitle(f"{name}{' •' if self.c.dirty else ''} – {APP_NAME} {__version__}")
+        # [*] zeigt Qt als Markierung für ungespeicherte Änderungen (macOS: Punkt im roten Knopf)
+        self.setWindowTitle(f"{name}[*] – {APP_NAME} {__version__}")
+        self.setWindowModified(self.c.dirty)
+
+    def _set_preview_quality(self, _index: int) -> None:
+        key = self.opt_quality.currentData()
+        if not key:
+            return
+        self.c.set_preview_quality(key)
+        if self.settings.preview_quality != key:
+            self.settings.preview_quality = key
+            try:
+                self.settings.save()
+            except OSError:
+                pass
+        self._update_quality_info()
+
+    def _update_quality_info(self) -> None:
+        size = self.c.preview_frame_size()
+        self.quality_info.setText(f"{size[0]}×{size[1]}" if size else "")
+        self.quality_info.setToolTip("Auflösung des Videobilds in der Vorschau" if size else "")
 
     def _sync_language_menu(self) -> None:
         current = self.c.model.project.layout.language

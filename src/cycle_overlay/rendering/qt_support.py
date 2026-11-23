@@ -11,7 +11,7 @@ import sys
 from functools import lru_cache
 
 import numpy as np
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -143,19 +143,63 @@ def font_for_cap(style: "Style | str", cap_px: float, role: QFont.Weight, *, sca
 
 
 def text_width(font: QFont, text: str) -> float:
+    """Breite des Textes inkl. Streckung; kursiv zusätzlich der Überhang der geneigten Zeichen."""
     if not text:
         return 0.0
-    return QFontMetricsF(font).horizontalAdvance(text) * getattr(font, "xscale", 1.0)
+    w = QFontMetricsF(font).horizontalAdvance(text) * getattr(font, "xscale", 1.0)
+    if font.italic():
+        w += 0.2 * QFontMetricsF(font).capHeight()  # Qt neigt ca. 11° -> oben ragt das letzte Zeichen über
+    return w
+
+
+class TextRecorder:
+    """Merkt sich, wo Texte gezeichnet wurden (genaue Umrisse der Zeichen, in Bildkoordinaten).
+
+    Nur für Tests: prüft, dass sich Texte eines Widgets nicht überlappen und im Widget bleiben.
+    """
+
+    active: "TextRecorder | None" = None
+
+    def __init__(self) -> None:
+        self.items: list[tuple[str, QRectF]] = []
+
+    def __enter__(self) -> "TextRecorder":
+        TextRecorder.active = self
+        return self
+
+    def __exit__(self, *_exc) -> None:
+        TextRecorder.active = None
+
+
+def text_path(text: str, font: QFont, x: float, baseline: float) -> QPainterPath:
+    """Umriss des Textes an (x, Grundlinie) – mit horizontaler Streckung der Schrift."""
+    path = QPainterPath()
+    path.addText(QPointF(0.0, 0.0), font, text)
+    xs = getattr(font, "xscale", 1.0)
+    return QTransform().translate(x, baseline).scale(xs, 1.0).map(path)
+
+
+def _record(p: QPainter, text: str, path: QPainterPath) -> None:
+    rec = TextRecorder.active
+    if rec is not None and text.strip():
+        rec.items.append((text, p.worldTransform().mapRect(path.boundingRect())))
+
+
+def draw_plain_text(p: QPainter, text: str, font: QFont, x: float, baseline: float, color) -> None:
+    """Text ohne Schatten/Kontur (Kompass, Maßstab …) – berücksichtigt die Schriftbreite wie draw_text."""
+    if not text:
+        return
+    path = text_path(text, font, x, baseline)
+    _record(p, text, path)
+    p.fillPath(path, QBrush(color if isinstance(color, QColor) else qcolor(color)))
 
 
 def draw_text(p: QPainter, text: str, font: QFont, x: float, baseline: float, color: str, style: Style) -> None:
     """Text als Pfad zeichnen – mit optionalem Schatten und Kontur für Lesbarkeit über Video."""
     if not text:
         return
-    path = QPainterPath()
-    path.addText(QPointF(0.0, 0.0), font, text)
-    xs = getattr(font, "xscale", 1.0)
-    path = QTransform().translate(x, baseline).scale(xs, 1.0).map(path)
+    path = text_path(text, font, x, baseline)
+    _record(p, text, path)
     size = font.pixelSize()
     if style.shadow:
         d = getattr(style, "shadow_distance", 1.0)
@@ -214,3 +258,43 @@ def image_to_rgba_bytes(img: QImage) -> bytes:
     if bpl == w * 4:
         return data
     return image_to_rgba(straight).tobytes()
+
+
+def draw_text_row(p: QPainter, parts, x: float, baseline: float, avail: float, style: Style,
+                  max_cap: float | None = None, align: str = "left") -> float:
+    """Mehrere Texte nebeneinander auf einer Grundlinie, gemeinsam verkleinert, bis sie in ``avail`` passen.
+
+    ``parts``: [(Text, Cap-Höhe, Rolle WEIGHT_*, Farbe, Abstand davor)]. Beschriftung und Einheit werden
+    mit ``label_scale``/``unit_scale`` vergrößert, aber nie höher als ``max_cap`` (die Zeilenhöhe).
+    Gibt die tatsächliche Breite zurück.
+    """
+    items = [pt for pt in parts if pt[0]]
+    if not items:
+        return 0.0
+
+    def caps(k: float) -> list[float]:
+        out = []
+        for _t, cap, role, _c, _g in items:
+            factor = style.unit_scale if role == WEIGHT_UNIT else style.label_scale if role == WEIGHT_LABEL else 1.0
+            c = cap * factor
+            if max_cap is not None:
+                c = min(c, max_cap)
+            out.append(c * k)
+        return out
+
+    k = 1.0
+    while True:
+        cs = caps(k)
+        fonts = [font_for_cap(style, c, role, scaled=False) for c, (_t, _cap, role, _col, _g) in zip(cs, items)]
+        widths = [text_width(f, t) for f, (t, *_r) in zip(fonts, items)]
+        gaps = [g * k if n else 0.0 for n, (*_r, g) in enumerate(items)]
+        total = sum(widths) + sum(gaps)
+        if total <= avail or k < 0.2:
+            break
+        k *= 0.92
+    cx = x + (avail - total if align == "right" else (avail - total) / 2 if align == "center" else 0.0)
+    for f, wdt, g, (t, _cap, _role, col, _g) in zip(fonts, widths, gaps, items):
+        cx += g
+        draw_text(p, t, f, cx, baseline, col, style)
+        cx += wdt
+    return total

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
@@ -40,6 +41,8 @@ TYPE_TITLES = {"text": "Wert + Beschriftung", "arc": "Rundinstrument", "bar": "B
 STATUS_COLORS = {"ok": "#2e9e4f", "partial": "#d08a00", "outside": "#d03030"}
 
 
+log = logging.getLogger(__name__)
+
 def channel_title(ch: str) -> str:
     if ch == CLOCK_CHANNEL:
         return "Uhrzeit"
@@ -55,12 +58,18 @@ class AddWidgetDialog(QDialog):
     Fahrt sind ausgegraut (mit Hinweis, was fehlt).
     """
 
-    def __init__(self, channels: list[str], parent=None):
+    def __init__(self, channels: list[str], parent=None, preview=None):
+        """``preview(key, channel) -> QImage``: Vorschaubild der Vorlage (optional)."""
         from ..rendering.templates import GROUPS, TEMPLATES, channels_for
 
         super().__init__(parent)
         self.setWindowTitle("Widget hinzufügen")
-        self.resize(640, 440)
+        self.resize(820, 520)
+        self._preview = preview
+        self.preview = QLabel()
+        self.preview.setFixedSize(440, 248)
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview.setStyleSheet("background:#3a404a; border-radius:6px; color:#c8c8c8")
         self._available = channels
         self._channels_for = channels_for
         self._templates = TEMPLATES
@@ -95,6 +104,7 @@ class AddWidgetDialog(QDialog):
         cr.setContentsMargins(0, 8, 0, 0)
         cr.addRow("Signal", self.channel)
         right = QVBoxLayout()
+        right.addWidget(self.preview)
         right.addWidget(self.title)
         right.addWidget(self.desc)
         right.addWidget(self.channel_row)
@@ -103,7 +113,7 @@ class AddWidgetDialog(QDialog):
                                    "im Tab „Widget“ anpassen.", "#8a8a8a"))
         body = QHBoxLayout()
         body.addWidget(self.list, 1)
-        body.addLayout(right, 1)
+        body.addLayout(right, 0)
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Hinzufügen")
         self.buttons.accepted.connect(self.accept)
@@ -112,6 +122,7 @@ class AddWidgetDialog(QDialog):
         lay.addLayout(body, 1)
         lay.addWidget(self.buttons)
         self.list.currentItemChanged.connect(lambda cur, _prev: self._show(cur))
+        self.channel.currentIndexChanged.connect(lambda _i: self._update_preview())
         self.list.itemDoubleClicked.connect(lambda it: self.accept() if it.data(Qt.ItemDataRole.UserRole) else None)
         if first is not None:
             self.list.setCurrentItem(first)
@@ -126,15 +137,36 @@ class AddWidgetDialog(QDialog):
             self.desc.setText("Links eine Vorlage wählen.")
             self.channel_row.setVisible(False)
             ok.setEnabled(False)
+            self.preview.clear()
             return
         tpl = self._templates[key]
         self.title.setText(tpl.title)
         self.desc.setText(tpl.description)
+        self.channel.blockSignals(True)
         self.channel.clear()
         for ch in self._channels_for(tpl, self._available):
             self.channel.addItem(channel_title(ch), ch)
+        self.channel.blockSignals(False)
         self.channel_row.setVisible(self.channel.count() > 1)
         ok.setEnabled(self.channel.count() > 0)
+        self._update_preview()
+
+    def _update_preview(self) -> None:
+        """Vorschau mit echten Werten der Fahrt (und dem Videobild, falls geladen)."""
+        item = self.list.currentItem()
+        key = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+        if not key or self._preview is None:
+            return
+        try:
+            img = self._preview(key, self.channel.currentData())
+        except Exception:  # noqa: BLE001 – eine fehlende Vorschau darf den Dialog nicht stören
+            log.exception("Vorschau für %s nicht möglich", key)
+            img = None
+        if img is None or img.isNull():
+            self.preview.setPixmap(QPixmap())
+            self.preview.setText("Keine Vorschau")
+        else:
+            self.preview.setPixmap(QPixmap.fromImage(img))
 
     def select_template(self, key: str) -> None:
         for k in range(self.list.count()):
@@ -285,7 +317,16 @@ class SignalPanel(QWidget):
         chans = self.c.model.available_channels()
         if not chans:
             return
-        dlg = AddWidgetDialog(chans, self)
+        from .widget_preview import template_preview, preview_time
+
+        m = self.c.model
+        t = preview_time(m, self.c.track_time())
+        bg = self.c.background
+
+        def preview(key, ch):
+            return template_preview(m, key, ch, t, background=bg)
+
+        dlg = AddWidgetDialog(chans, self, preview=preview)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             key, ch = dlg.result_values()
             if key:
@@ -318,7 +359,7 @@ class SignalPanel(QWidget):
             self.gpx_label.setText(
                 f"<b>{name}</b><br>{local:%d.%m.%Y %H:%M} · {format_duration(tel.duration)} · "
                 f"{format_value('distance', tel.channels['distance'][-1], m.project.units)}"
-                + (f" · {format_value('elevation_gain', tel.channels['elevation_gain'][-1], m.project.units)} hm"
+                + (f" · ▲ {format_value('elevation_gain', tel.channels['elevation_gain'][-1], m.project.units)}"
                    if tel.available.get('elevation_gain') else "")
             )
         else:

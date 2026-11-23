@@ -382,3 +382,19 @@ def test_export_content_overlay_or_video(model, clip, tmp_path):
         "overlay", "mp4_h264", "prores4444", "standard")
     jobs = model.batch_jobs([clip])
     assert jobs[0].target == clip.with_name("GX010001_mit_daten.mov")
+
+
+def test_preview_size_for_quality():
+    from cycle_overlay.core.video_frames import PREVIEW_QUALITIES, preview_size_for
+
+    assert set(PREVIEW_QUALITIES) == {"auto", "full", "half", "quarter"}
+    assert preview_size_for(3840, 2160, "full") == (3840, 2160)
+    assert preview_size_for(3840, 2160, "half") == (1920, 1080)
+    assert preview_size_for(3840, 2160, "quarter") == (960, 540)
+    # automatisch: Bildschirmbreite (aufgerundet auf 320er-Schritte), höchstens Original
+    assert preview_size_for(3840, 2160, "auto", 1000) == (1280, 720)
+    assert preview_size_for(3840, 2160, "auto", 2880) == (2880, 1620)
+    assert preview_size_for(1920, 1080, "auto", 5000) == (1920, 1080)
+    assert preview_size_for(3840, 2160, "auto", 10) == (320, 180)
+    w, h = preview_size_for(2704, 1521, "half")
+    assert w % 2 == 0 and h % 2 == 0

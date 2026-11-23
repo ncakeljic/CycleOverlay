@@ -60,3 +60,21 @@ Optionen: `-SkipTests` (schneller), `-SkipFfmpeg` (ffmpeg nicht mitliefern, die 
 
 Das Repository muss **öffentlich** sein, damit die Apps die Releases ohne Anmeldung abrufen können.
 Der Installer ist nicht signiert; Windows (SmartScreen/Smart App Control) kann deshalb warnen.
+
+
+## macOS und Linux
+
+| System | Befehl (im Projektordner) | Ergebnis in `dist/` |
+|---|---|---|
+| macOS (Apple Silicon) | `bash packaging/macos/build.sh` | `CycleOverlay-<Version>-macOS-arm64.dmg` |
+| Linux (Debian/Ubuntu) | `bash packaging/linux/build.sh` | `cycleoverlay_<Version>_amd64.deb`, `CycleOverlay-<Version>-linux-x86_64.tar.gz` |
+
+Beide brauchen `uv`; der Selbsttest braucht ffmpeg (`brew install ffmpeg` bzw. `sudo apt install ffmpeg`).
+GitHub Actions baut alle drei Systeme automatisch bei jedem Tag `vX.Y.Z`.
+
+- **macOS**: Die App ist nur ad-hoc signiert (nicht notarisiert). Beim ersten Start Rechtsklick →
+  „Öffnen“. ffmpeg kommt von Homebrew; wer es mitliefern will, legt `ffmpeg` und `ffprobe` nach
+  `packaging/macos/ffmpeg/`.
+- **Linux**: Das `.deb` installiert nach `/opt/cycleoverlay`, legt `cycleoverlay` als Befehl und einen
+  Menüeintrag an und zieht ffmpeg und die Qt-Systembibliotheken als Abhängigkeiten mit:
+  `sudo apt install ./cycleoverlay_<Version>_amd64.deb`.

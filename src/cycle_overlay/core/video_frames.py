@@ -33,6 +33,34 @@ def preview_size(src_w: int, src_h: int, max_w: int = 960) -> tuple[int, int]:
     return max(2, w - w % 2), max(2, h - h % 2)
 
 
+#: Vorschau-Qualität wie die Wiedergabeauflösung in Premiere: Schlüssel -> Titel
+PREVIEW_QUALITIES = {
+    "auto": "Automatisch",
+    "full": "Voll",
+    "half": "1/2",
+    "quarter": "1/4",
+}
+#: „Automatisch“ rundet die Fensterbreite auf diese Schritte (sonst würde jede Größenänderung neu laden)
+AUTO_STEP = 320
+
+
+def preview_size_for(src_w: int, src_h: int, quality: str, target_w: int = 960) -> tuple[int, int]:
+    """Größe der Vorschaubilder je nach Qualität.
+
+    full/half/quarter: Anteil der Originalauflösung (wie Premiere).
+    auto: so breit wie die Vorschau auf dem Bildschirm in echten Pixeln (Retina doppelt), höchstens Original.
+    """
+    if quality == "full":
+        return preview_size(src_w, src_h, src_w)
+    if quality == "half":
+        return preview_size(src_w, src_h, max(src_w // 2, 2))
+    if quality == "quarter":
+        return preview_size(src_w, src_h, max(src_w // 4, 2))
+    want = max(int(target_w), 320)
+    want = -(-want // AUTO_STEP) * AUTO_STEP  # aufrunden
+    return preview_size(src_w, src_h, min(want, src_w))
+
+
 class VideoFrameSource:
     def __init__(self, path: str | PathLike, width: int, height: int, fps: Fraction | float = 30,
                  ffmpeg: str | PathLike | None = None, cache_size: int = 48):

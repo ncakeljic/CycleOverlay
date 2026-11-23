@@ -1,11 +1,12 @@
 # PyInstaller-Konfiguration für CycleOverlay (Ordner-Modus, ohne Konsolenfenster).
 #
 # Aufruf (aus dem Projektordner):  uv run --with pyinstaller pyinstaller --noconfirm packaging/cycleoverlay.spec
-# Ergebnis:                        dist/CycleOverlay/CycleOverlay.exe (Windows) bzw. dist/CycleOverlay.app (macOS)
+# Ergebnis:                        dist/CycleOverlay/CycleOverlay(.exe) (Windows/Linux) bzw. dist/CycleOverlay.app (macOS)
 #
-# ffmpeg/ffprobe werden mitgeliefert, wenn sie in packaging/windows/ffmpeg/ bzw. packaging/macos/ffmpeg/
-# liegen (das Windows-Build-Skript lädt sie automatisch). Sie landen im Ordner „bin“ der App, wo
-# CycleOverlay sie zuerst sucht (app_paths.bundled_bin_dir).
+# ffmpeg/ffprobe werden mitgeliefert, wenn sie in packaging/<windows|macos|linux>/ffmpeg/ liegen (das
+# Windows-Build-Skript lädt sie automatisch). Sie landen im Ordner „bin“ der App, wo CycleOverlay sie
+# zuerst sucht (app_paths.bundled_bin_dir). Unter macOS und Linux wird sonst das System-ffmpeg benutzt
+# (Homebrew bzw. Paketverwaltung).
 
 import sys
 from pathlib import Path
@@ -16,6 +17,17 @@ ROOT = Path(SPECPATH).resolve().parent  # noqa: F821 – SPECPATH setzt PyInstal
 SRC = ROOT / "src"
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
+PLATFORM_DIR = "windows" if IS_WIN else ("macos" if IS_MAC else "linux")
+
+
+def _version() -> str:
+    import re
+
+    text = (SRC / "cycle_overlay" / "__init__.py").read_text(encoding="utf-8")
+    return re.search(r'__version__\s*=\s*"([^"]+)"', text).group(1)
+
+
+VERSION = _version()
 
 datas = [(str(SRC / "cycle_overlay" / "resources"), "cycle_overlay/resources")]
 try:  # IANA-Zeitzonen (unter Windows nicht im System)
@@ -24,7 +36,7 @@ except Exception:  # noqa: BLE001
     pass
 
 binaries = []
-ff_dir = ROOT / "packaging" / ("windows" if IS_WIN else "macos") / "ffmpeg"
+ff_dir = ROOT / "packaging" / PLATFORM_DIR / "ffmpeg"
 for name in ("ffmpeg", "ffprobe"):
     exe = ff_dir / (name + (".exe" if IS_WIN else ""))
     if exe.exists():
@@ -47,7 +59,8 @@ a = Analysis(  # noqa: F821
 )
 pyz = PYZ(a.pure)  # noqa: F821
 
-icon = ROOT / "packaging" / "windows" / "cycleoverlay.ico" if IS_WIN else None
+icon = {"windows": ROOT / "packaging" / "windows" / "cycleoverlay.ico",
+        "macos": ROOT / "packaging" / "macos" / "cycleoverlay.icns"}.get(PLATFORM_DIR)
 exe = EXE(  # noqa: F821
     pyz,
     a.scripts,
@@ -64,6 +77,23 @@ if IS_MAC:
     app = BUNDLE(  # noqa: F821
         coll,
         name="CycleOverlay.app",
+        icon=str(icon) if icon and icon.exists() else None,
         bundle_identifier="de.nikola.cycleoverlay",
-        info_plist={"NSHighResolutionCapable": True},
+        version=VERSION,
+        info_plist={
+            "CFBundleName": "CycleOverlay",
+            "CFBundleDisplayName": "CycleOverlay",
+            "CFBundleShortVersionString": VERSION,
+            "CFBundleVersion": VERSION,
+            "NSHighResolutionCapable": True,
+            "LSMinimumSystemVersion": "12.0",
+            "NSHumanReadableCopyright": "CycleOverlay",
+            # Projektdateien (.cyov) mit CycleOverlay öffnen
+            "CFBundleDocumentTypes": [{
+                "CFBundleTypeName": "CycleOverlay-Projekt",
+                "CFBundleTypeRole": "Editor",
+                "LSHandlerRank": "Owner",
+                "CFBundleTypeExtensions": ["cyov"],
+            }],
+        },
     )

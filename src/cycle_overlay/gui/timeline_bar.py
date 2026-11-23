@@ -94,7 +94,9 @@ class TimelineBar(QWidget):
         self.out_edit = QLineEdit()
         for ed in (self.in_edit, self.out_edit):
             ed.setPlaceholderText("H:MM:SS")
-            ed.setMaximumWidth(90)
+            # breit genug für „10:41:04.000“ in der Systemschrift (macOS-Schrift ist breiter)
+            ed.setMinimumWidth(ed.fontMetrics().horizontalAdvance("00:00:00.000") + 24)
+            ed.setMaximumWidth(ed.fontMetrics().horizontalAdvance("00:00:00.000") + 40)
             ed.editingFinished.connect(self._on_in_out_edited)
         self.set_in_btn = QPushButton("In = Position")
         self.set_in_btn.clicked.connect(lambda: self._set_mark("in"))

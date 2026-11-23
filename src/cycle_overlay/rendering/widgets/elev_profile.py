@@ -16,6 +16,7 @@ from ..qt_support import (
     WEIGHT_UNIT,
     WEIGHT_VALUE,
     draw_text,
+    draw_text_row,
     font_for_cap,
     qcolor,
     round_pen,
@@ -110,23 +111,12 @@ class ElevationProfileWidget(OverlayWidget):
             number, unit = v.text(cfg, i)
             label = v.label(cfg)
             cap = 0.15 * h
-            f_label = font_for_cap(st, cap * 0.75, WEIGHT_LABEL)
-            f_value = font_for_cap(st, cap, WEIGHT_VALUE)
-            f_unit = font_for_cap(st, cap * 0.7, WEIGHT_UNIT)
-            base = y + pad + cap
-            cx = left
-            if label:
-                draw_text(p, label, f_label, cx, base, st.label_color, st)
-                cx += text_width(f_label, label) + 0.04 * h
-            draw_text(p, number, f_value, cx, base, v.text_color(cfg, i), st)
-            if unit:
-                cx += text_width(f_value, number) + 0.02 * h
-                draw_text(p, unit, f_unit, cx, base, st.label_color, st)
-                cx += text_width(f_unit, unit)
             alt = v.alt_text(cfg, i) if cfg.alt_unit else None
-            if alt:
-                txt = f"{alt[0]} {alt[1]}"
-                draw_text(p, txt, f_unit, cx + 0.06 * h, base, st.label_color, st)
+            parts = [(label, cap * 0.75, WEIGHT_LABEL, st.label_color, 0.0),
+                     (number, cap, WEIGHT_VALUE, v.text_color(cfg, i), 0.04 * h),
+                     (unit, cap * 0.7, WEIGHT_UNIT, st.label_color, 0.02 * h),
+                     (f"{alt[0]} {alt[1]}" if alt else "", cap * 0.7, WEIGHT_UNIT, st.label_color, 0.06 * h)]
+            draw_text_row(p, parts, left, y + pad + cap, right - left, st, max_cap=cap)
 
     def _marker_text(self, p: QPainter, rect: QRectF, i: int, mx: float, my: float, r: float) -> None:
         """Wert direkt neben der Positionsmarke – auf Wunsch zweizeilig in beiden Einheiten (355 M / 1165 FT)."""

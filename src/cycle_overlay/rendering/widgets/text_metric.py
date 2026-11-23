@@ -96,7 +96,16 @@ class TextMetricWidget(OverlayWidget):
             draw_text(p, label, f_label, cx, label_base, st.label_color, st)
             cx += text_width(f_label, label) + gap_label * scale
         elif lp in ("top", "bottom") and f_label is not None:
-            draw_text(p, label, f_label, start_x(text_width(f_label, label)), label_base, st.label_color, st)
+            lw = text_width(f_label, label)
+            avail = w - 2 * pad
+            if lw > avail > 0:  # lange Beschriftung in schmalem Widget: kleiner statt über den Rand
+                small = label_cap * avail / lw
+                f_label = font_for_cap(st, small, WEIGHT_LABEL, scaled=False)
+                while text_width(f_label, label) > avail and small > 1:
+                    small *= 0.95
+                    f_label = font_for_cap(st, small, WEIGHT_LABEL, scaled=False)
+                lw = text_width(f_label, label)
+            draw_text(p, label, f_label, start_x(lw), label_base, st.label_color, st)
 
         draw_text(p, number, f_value, cx, value_base, v.text_color(cfg, i), st)
         if unit:
